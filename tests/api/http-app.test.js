@@ -70,6 +70,43 @@ test('registry workflow tasks and filing validation are exposed through HTTP ada
   tasks=await res.json(); assert.equal(tasks.length,1); assert.equal(tasks[0].status,'COMPLETED');
 }));
 
+test('registry decision endpoints pass reasons and accepted state through HTTP adapter',async()=>{
+  const calls=[];
+  const svc={
+    async returnFiling(_actor,id,reason){calls.push(['return',id,reason]); return {filingId:id,status:'RETURNED',decisionReason:reason};},
+    async rejectFiling(_actor,id,reason){calls.push(['reject',id,reason]); return {filingId:id,status:'REJECTED',decisionReason:reason};},
+    async acceptFiling(_actor,id){calls.push(['accept',id]); return {filingId:id,status:'ACCEPTED'};}
+  };
+  const mgr={...hdr,'x-dev-roles':'REG-MGR'};
+  await withCustomService(svc,async(base)=>{
+    let res=await fetch(base+'/filings/f-1/return',{method:'POST',headers:hdr,body:JSON.stringify({reason:'Missing attachment'})});
+    assert.equal(res.status,200); assert.equal((await res.json()).status,'RETURNED');
+    res=await fetch(base+'/filings/f-1/reject',{method:'POST',headers:mgr,body:JSON.stringify({reason:'Not within jurisdiction'})});
+    assert.equal(res.status,200); assert.equal((await res.json()).status,'REJECTED');
+    res=await fetch(base+'/filings/f-1/accept',{method:'POST',headers:mgr,body:'{}'});
+    assert.equal(res.status,200); assert.equal((await res.json()).status,'ACCEPTED');
+  });
+  assert.deepEqual(calls,[['return','f-1','Missing attachment'],['reject','f-1','Not within jurisdiction'],['accept','f-1']]);
+});
+
+test('finance endpoints expose assessment, pending payment and controlled confirmation',async()=>{
+  const svc={
+    async assessFilingFee(_actor,id,input){return {assessmentId:'a-1',filingId:id,courtId:'COURT-A',amountMinor:input.amountMinor,currency:input.currency,status:'ASSESSED'};},
+    async createPayment(_actor,id){return {paymentId:'pay-1',assessmentId:id,courtId:'COURT-A',amountMinor:12500,currency:'PGK',status:'PENDING'};},
+    async confirmPayment(_actor,id,providerReference){return {paymentId:id,status:'CONFIRMED',providerReference};}
+  };
+  const fin={'content-type':'application/json','x-dev-sub':'fin-a','x-dev-roles':'FIN','x-dev-courts':'COURT-A'};
+  const finMgr={...fin,'x-dev-sub':'fin-mgr-a','x-dev-roles':'FIN-MGR'};
+  await withCustomService(svc,async(base)=>{
+    let res=await fetch(base+'/filings/f-1/fee-assessments',{method:'POST',headers:fin,body:JSON.stringify({amountMinor:12500,currency:'PGK'})});
+    assert.equal(res.status,201); const assessment=await res.json(); assert.equal(assessment.status,'ASSESSED');
+    res=await fetch(base+`/fee-assessments/${assessment.assessmentId}/payments`,{method:'POST',headers:fin,body:'{}'});
+    assert.equal(res.status,201); const payment=await res.json(); assert.equal(payment.status,'PENDING');
+    res=await fetch(base+`/payments/${payment.paymentId}/confirm`,{method:'POST',headers:finMgr,body:JSON.stringify({providerReference:'PGW-1'})});
+    assert.equal(res.status,200); const confirmed=await res.json(); assert.equal(confirmed.status,'CONFIRMED'); assert.equal(confirmed.providerReference,'PGW-1');
+  });
+});
+
 test('ICT admin receives 403 on registry queue without metadata leakage',async()=>withServer(async(base)=>{
   const res=await fetch(base+'/registry/filings',{headers:{'x-dev-sub':'ict','x-dev-roles':'ICT-ADMIN','x-dev-courts':'COURT-A'}});
   assert.equal(res.status,403); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
