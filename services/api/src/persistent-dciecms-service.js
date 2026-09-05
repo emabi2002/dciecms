@@ -39,14 +39,7 @@ class PersistentDciecmsService {
     if (!(await this.repository.isCaseTypeActive(caseTypeCode))) throw new ValidationError(`Unknown or inactive case type: ${caseTypeCode}`);
     const party = await this.repository.getParty(input.filerPartyId);
     if (!party || party.courtId !== input.courtId) throw new ValidationError('Filer party is not available in the selected court scope');
-    const filing = await this.repository.createFilingDraft({
-      filingId: randomUUID(),
-      filingReference: `F-${Date.now()}-${Math.floor(Math.random() * 10000)}`,
-      courtId: input.courtId,
-      caseTypeCode,
-      filerPartyId: input.filerPartyId,
-      createdBy: actor.userId
-    });
+    const filing = await this.repository.createFilingDraft({ filingId: randomUUID(), filingReference: `F-${Date.now()}-${Math.floor(Math.random() * 10000)}`, courtId: input.courtId, caseTypeCode, filerPartyId: input.filerPartyId, createdBy: actor.userId });
     this._audit(actor, 'filing.create', 'filing', filing.filingId, { courtId: filing.courtId, caseTypeCode });
     return filing;
   }
@@ -71,16 +64,7 @@ class PersistentDciecmsService {
     authorize(actor, 'document.upload', { courtId: filing.courtId });
     if (!metadata?.fileName || !metadata?.mimeType || !metadata?.checksumSha256) throw new ValidationError('fileName, mimeType and checksumSha256 are required');
     if (!/^[a-f0-9]{64}$/i.test(metadata.checksumSha256)) throw new ValidationError('checksumSha256 must be a SHA-256 hex digest');
-    const document = await this.repository.createDocument({
-      documentId: randomUUID(),
-      filingId,
-      courtId: filing.courtId,
-      fileName: metadata.fileName,
-      mimeType: metadata.mimeType,
-      sizeBytes: Number(metadata.sizeBytes || 0),
-      checksumSha256: metadata.checksumSha256.toLowerCase(),
-      classification: metadata.classification || 'CONFIDENTIAL'
-    });
+    const document = await this.repository.createDocument({ documentId: randomUUID(), filingId, courtId: filing.courtId, fileName: metadata.fileName, mimeType: metadata.mimeType, sizeBytes: Number(metadata.sizeBytes || 0), checksumSha256: metadata.checksumSha256.toLowerCase(), classification: metadata.classification || 'CONFIDENTIAL' });
     this._audit(actor, 'document.upload', 'document', document.documentId, { courtId: filing.courtId, filingId });
     return document;
   }
@@ -198,6 +182,39 @@ class PersistentDciecmsService {
     const confirmed = await this.repository.confirmPayment({ paymentId, providerReference: String(providerReference).trim(), actorSubject: actor.userId, at: new Date().toISOString() });
     this._audit(actor, 'finance.payment.confirm', 'payment', paymentId, { courtId: payment.courtId, providerReference: String(providerReference).trim() });
     return confirmed;
+  }
+
+  async issueReceipt(actor, paymentId) {
+    const payment = await this.repository.getPayment(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+    authorize(actor, 'finance.receipt.issue', { courtId: payment.courtId });
+    if (payment.status !== 'CONFIRMED') throw new ConflictError(`Receipt requires CONFIRMED payment, got ${payment.status}`);
+    const existing = await this.repository.getReceiptByPayment(paymentId);
+    if (existing) return existing;
+    const receipt = await this.repository.createReceipt({ receiptId: randomUUID(), receiptNumber: `RCT-${Date.now()}-${Math.floor(Math.random() * 10000)}`, paymentId, courtId: payment.courtId, amountMinor: payment.amountMinor, currency: payment.currency, actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.receipt.issue', 'receipt', receipt.receiptId, { courtId: payment.courtId, paymentId });
+    return receipt;
+  }
+
+  async createReconciliation(actor, paymentId) {
+    const payment = await this.repository.getPayment(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+    authorize(actor, 'finance.reconciliation.create', { courtId: payment.courtId });
+    if (payment.status !== 'CONFIRMED') throw new ConflictError(`Reconciliation requires CONFIRMED payment, got ${payment.status}`);
+    const reconciliation = await this.repository.createReconciliation({ reconciliationId: randomUUID(), paymentId, courtId: payment.courtId, actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.reconciliation.create', 'reconciliation', reconciliation.reconciliationId, { courtId: payment.courtId, paymentId });
+    return reconciliation;
+  }
+
+  async certifyReconciliation(actor, reconciliationId) {
+    const reconciliation = await this.repository.getReconciliation(reconciliationId);
+    if (!reconciliation) throw new NotFoundError('Reconciliation not found');
+    authorize(actor, 'finance.reconciliation.certify', { courtId: reconciliation.courtId });
+    if (reconciliation.status !== 'PREPARED') throw new ConflictError(`Reconciliation cannot be certified from status ${reconciliation.status}`);
+    if (reconciliation.preparedBy === actor.userId) throw new AccessDeniedError('Segregation of duties: the maker cannot certify the same reconciliation');
+    const certified = await this.repository.certifyReconciliation({ reconciliationId, actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.reconciliation.certify', 'reconciliation', reconciliationId, { courtId: reconciliation.courtId, paymentId: reconciliation.paymentId });
+    return certified;
   }
 }
 
