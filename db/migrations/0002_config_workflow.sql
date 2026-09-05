@@ -23,6 +23,10 @@ VALUES
   ('ADMINISTRATIVE', 'Administrative')
 ON CONFLICT (case_type_code) DO NOTHING;
 
+ALTER TABLE registry.filings
+  ADD COLUMN IF NOT EXISTS validated_at timestamptz,
+  ADD COLUMN IF NOT EXISTS validated_by_subject varchar(255);
+
 CREATE TABLE IF NOT EXISTS workflow.workflow_tasks (
   task_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   filing_id uuid NOT NULL REFERENCES registry.filings(filing_id),
