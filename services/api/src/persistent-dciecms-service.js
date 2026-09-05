@@ -131,6 +131,39 @@ class PersistentDciecmsService {
       throw error;
     }
   }
+
+  async assessFilingFee(actor, filingId, input) {
+    const filing = await this._filingForAccess(actor, filingId, 'finance.assess');
+    if (filing.status !== 'ACCEPTED') throw new ConflictError(`Fee assessment requires ACCEPTED filing, got ${filing.status}`);
+    const amountMinor = input?.amountMinor;
+    if (!Number.isInteger(amountMinor) || amountMinor <= 0) throw new ValidationError('amountMinor must be a positive integer');
+    const currency = String(input?.currency || 'PGK').trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) throw new ValidationError('currency must be a 3-letter code');
+    const assessment = await this.repository.createFeeAssessment({ assessmentId: randomUUID(), filingId, courtId: filing.courtId, amountMinor, currency, actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.fee.assess', 'fee_assessment', assessment.assessmentId, { courtId: filing.courtId, filingId, amountMinor, currency });
+    return assessment;
+  }
+
+  async createPayment(actor, assessmentId) {
+    const assessment = await this.repository.getFeeAssessment(assessmentId);
+    if (!assessment) throw new NotFoundError('Fee assessment not found');
+    authorize(actor, 'finance.payment.create', { courtId: assessment.courtId });
+    if (assessment.status !== 'ASSESSED') throw new ConflictError(`Payment cannot be created for assessment status ${assessment.status}`);
+    const payment = await this.repository.createPayment({ paymentId: randomUUID(), assessmentId, courtId: assessment.courtId, amountMinor: assessment.amountMinor, currency: assessment.currency, actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.payment.create', 'payment', payment.paymentId, { courtId: assessment.courtId, assessmentId, amountMinor: payment.amountMinor, currency: payment.currency });
+    return payment;
+  }
+
+  async confirmPayment(actor, paymentId, providerReference) {
+    const payment = await this.repository.getPayment(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+    authorize(actor, 'finance.payment.confirm', { courtId: payment.courtId });
+    if (!String(providerReference || '').trim()) throw new ValidationError('providerReference is required');
+    if (payment.status !== 'PENDING') throw new ConflictError(`Payment cannot be confirmed from status ${payment.status}`);
+    const confirmed = await this.repository.confirmPayment({ paymentId, providerReference: String(providerReference).trim(), actorSubject: actor.userId, at: new Date().toISOString() });
+    this._audit(actor, 'finance.payment.confirm', 'payment', paymentId, { courtId: payment.courtId, providerReference: String(providerReference).trim() });
+    return confirmed;
+  }
 }
 
 module.exports = { PersistentDciecmsService };
