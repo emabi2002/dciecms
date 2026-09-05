@@ -4,14 +4,18 @@ const assert = require('node:assert/strict');
 const { resolveActorFromClaims } = require('../../packages/auth');
 const { PersistentDciecmsService } = require('../../services/api/src/persistent-dciecms-service');
 
-const reg = resolveActorFromClaims({ sub: 'reg-a', roles: ['REG'], court_ids: ['11111111-1111-1111-1111-111111111111'] });
-const mgr = resolveActorFromClaims({ sub: 'mgr-a', roles: ['REG-MGR'], court_ids: ['11111111-1111-1111-1111-111111111111'] });
+const COURT_A = '11111111-1111-1111-1111-111111111111';
+const COURT_B = '22222222-2222-2222-2222-222222222222';
+const reg = resolveActorFromClaims({ sub: 'reg-a', roles: ['REG'], court_ids: [COURT_A] });
+const mgr = resolveActorFromClaims({ sub: 'mgr-a', roles: ['REG-MGR'], court_ids: [COURT_A] });
+const regB = resolveActorFromClaims({ sub: 'reg-b', roles: ['REG'], court_ids: [COURT_B] });
 
 class FakeRepository {
   constructor() {
     this.parties = new Map();
     this.filings = new Map();
     this.tasks = new Map();
+    this.documents = new Map();
   }
   async createParty(input) {
     const row = Object.freeze({ ...input, createdAt: new Date().toISOString() });
@@ -56,6 +60,15 @@ class FakeRepository {
     filing.decisionAt = at;
     return Object.freeze({ ...filing });
   }
+  async listRegistryQueue({ courtIds }) {
+    return [...this.filings.values()].filter(f => f.status === 'SUBMITTED' && courtIds.includes(f.courtId)).map(f => Object.freeze({ ...f }));
+  }
+  async createDocument(input) {
+    const row = Object.freeze({ ...input, status: 'QUARANTINED', createdAt: new Date().toISOString() });
+    this.documents.set(row.documentId, row);
+    return row;
+  }
+  async getDocument(documentId) { return this.documents.get(documentId) || null; }
 }
 
 test('persistent service creates party and filing through repository', async () => {
@@ -103,4 +116,32 @@ test('only registry manager may reject or accept a validated filing', async () =
   await assert.rejects(() => svc.acceptFiling(reg, draft.filingId), /REG-MGR|manager/i);
   const accepted = await svc.acceptFiling(mgr, draft.filingId);
   assert.equal(accepted.status, 'ACCEPTED');
+});
+
+test('persistent registry queue returns only submitted filings within actor court scope', async () => {
+  const repo = new FakeRepository();
+  const svc = new PersistentDciecmsService({ repository: repo });
+  const partyA = await svc.createParty(reg, { courtId: COURT_A, partyType: 'PERSON', displayName: 'Court A Party' });
+  const partyB = await svc.createParty(regB, { courtId: COURT_B, partyType: 'PERSON', displayName: 'Court B Party' });
+  const filingA = await svc.createFilingDraft(reg, { courtId: COURT_A, caseTypeCode: 'CIVIL', filerPartyId: partyA.partyId });
+  const filingB = await svc.createFilingDraft(regB, { courtId: COURT_B, caseTypeCode: 'CIVIL', filerPartyId: partyB.partyId });
+  await svc.submitFiling(reg, filingA.filingId, 'idem-a');
+  await svc.submitFiling(regB, filingB.filingId, 'idem-b');
+  const rows = await svc.listRegistryQueue(reg);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].filingId, filingA.filingId);
+});
+
+test('persistent document registration validates SHA-256 and enforces court scope on retrieval', async () => {
+  const repo = new FakeRepository();
+  const svc = new PersistentDciecmsService({ repository: repo });
+  const party = await svc.createParty(reg, { courtId: COURT_A, partyType: 'PERSON', displayName: 'Jane Doe' });
+  const filing = await svc.createFilingDraft(reg, { courtId: COURT_A, caseTypeCode: 'CIVIL', filerPartyId: party.partyId });
+  await assert.rejects(() => svc.registerDocument(reg, filing.filingId, { fileName: 'claim.pdf', mimeType: 'application/pdf', checksumSha256: 'bad' }), /SHA-256/i);
+  const doc = await svc.registerDocument(reg, filing.filingId, { fileName: 'claim.pdf', mimeType: 'application/pdf', sizeBytes: 123, checksumSha256: 'a'.repeat(64) });
+  assert.equal(doc.status, 'QUARANTINED');
+  assert.equal(doc.checksumSha256, 'a'.repeat(64));
+  await assert.rejects(() => svc.getDocument(regB, doc.documentId), /court scope/i);
+  const retrieved = await svc.getDocument(reg, doc.documentId);
+  assert.equal(retrieved.documentId, doc.documentId);
 });
