@@ -32,35 +32,35 @@ function createHttpApp(service, actorResolver) {
       const path = url.pathname;
 
       if (req.method === 'POST' && path === '/parties') {
-        return send(res, 201, service.createParty(actor, await readJson(req)));
+        return send(res, 201, await service.createParty(actor, await readJson(req)));
       }
       if (req.method === 'POST' && path === '/filings') {
-        return send(res, 201, service.createFilingDraft(actor, await readJson(req)));
+        return send(res, 201, await service.createFilingDraft(actor, await readJson(req)));
       }
       if (req.method === 'GET' && path === '/registry/filings') {
-        return send(res, 200, service.listRegistryQueue(actor));
+        return send(res, 200, await service.listRegistryQueue(actor));
       }
       if (req.method === 'GET' && path === '/workflow/tasks') {
-        return send(res, 200, service.listWorkflowTasks(actor, { includeCompleted: url.searchParams.get('includeCompleted') === 'true' }));
+        return send(res, 200, await service.listWorkflowTasks(actor, { includeCompleted: url.searchParams.get('includeCompleted') === 'true' }));
       }
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) {
-        return send(res, 200, service.getFiling(actor, filingGet[1]));
+        return send(res, 200, await service.getFiling(actor, filingGet[1]));
       }
       const docPost = path.match(/^\/filings\/([^/]+)\/documents$/);
       if (req.method === 'POST' && docPost) {
-        return send(res, 201, service.registerDocument(actor, docPost[1], await readJson(req)));
+        return send(res, 201, await service.registerDocument(actor, docPost[1], await readJson(req)));
       }
       const submitPost = path.match(/^\/filings\/([^/]+)\/submit$/);
       if (req.method === 'POST' && submitPost) {
         const body = await readJson(req);
-        return send(res, 200, service.submitFiling(actor, submitPost[1], req.headers['idempotency-key'] || body.idempotencyKey));
+        return send(res, 200, await service.submitFiling(actor, submitPost[1], req.headers['idempotency-key'] || body.idempotencyKey));
       }
       const validatePost = path.match(/^\/filings\/([^/]+)\/validate$/);
       if (req.method === 'POST' && validatePost) {
         await readJson(req);
-        return send(res, 200, service.validateFiling(actor, validatePost[1]));
+        return send(res, 200, await service.validateFiling(actor, validatePost[1]));
       }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
