@@ -8,6 +8,10 @@ const {resolveActorFromClaims}=require('../../packages/auth');
 
 async function withServer(fn){
   const svc=new DciecmsService();
+  return withCustomService(svc, fn);
+}
+
+async function withCustomService(svc, fn){
   const handler=createHttpApp(svc, req=>{
     const sub=req.headers['x-dev-sub'];
     if(!sub) return null;
@@ -32,6 +36,19 @@ test('party and filing can be created through HTTP adapter',async()=>withServer(
   res=await fetch(base+'/filings',{method:'POST',headers:hdr,body:JSON.stringify({courtId:'COURT-A',caseTypeCode:'CIVIL',filerPartyId:party.partyId})});
   assert.equal(res.status,201); const filing=await res.json(); assert.equal(filing.status,'DRAFT');
 }));
+
+test('HTTP adapter awaits asynchronous persistent-service results',async()=>{
+  const svc={
+    async createParty(){ return {partyId:'p-async',courtId:'COURT-A',partyType:'PERSON',displayName:'Async Party'}; }
+  };
+  await withCustomService(svc, async(base)=>{
+    const res=await fetch(base+'/parties',{method:'POST',headers:hdr,body:JSON.stringify({courtId:'COURT-A',partyType:'PERSON',displayName:'Async Party'})});
+    assert.equal(res.status,201);
+    const body=await res.json();
+    assert.equal(body.partyId,'p-async');
+    assert.equal(body.displayName,'Async Party');
+  });
+});
 
 test('registry workflow tasks and filing validation are exposed through HTTP adapter',async()=>withServer(async(base)=>{
   let res=await fetch(base+'/parties',{method:'POST',headers:hdr,body:JSON.stringify({courtId:'COURT-A',partyType:'PERSON',displayName:'Jane Doe'})});
