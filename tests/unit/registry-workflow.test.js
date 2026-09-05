@@ -20,10 +20,7 @@ function submittedFiling() {
 test('filing draft rejects an unknown case type', () => {
   const svc = new DciecmsService();
   const party = svc.createParty(regA, { courtId: 'COURT-A', partyType: 'PERSON', displayName: 'Jane Doe' });
-  assert.throws(
-    () => svc.createFilingDraft(regA, { courtId: 'COURT-A', caseTypeCode: 'NOT-A-CASE-TYPE', filerPartyId: party.partyId }),
-    ValidationError
-  );
+  assert.throws(() => svc.createFilingDraft(regA, { courtId: 'COURT-A', caseTypeCode: 'NOT-A-CASE-TYPE', filerPartyId: party.partyId }), ValidationError);
 });
 
 test('submission creates exactly one pending registry validation task', () => {
@@ -33,7 +30,6 @@ test('submission creates exactly one pending registry validation task', () => {
   assert.equal(tasks[0].filingId, filing.filingId);
   assert.equal(tasks[0].taskType, 'REGISTRY_VALIDATE_FILING');
   assert.equal(tasks[0].status, 'PENDING');
-
   svc.submitFiling(regA, filing.filingId, 'submit-1');
   tasks = svc.listWorkflowTasks(regA);
   assert.equal(tasks.length, 1);
@@ -45,10 +41,8 @@ test('registry validation transitions filing and completes the workflow task', (
   assert.equal(validated.status, 'VALIDATED');
   assert.equal(validated.validatedBy, 'reg-a');
   assert.ok(validated.validatedAt);
-
   const active = svc.listWorkflowTasks(regA);
   assert.equal(active.length, 0);
-
   const all = svc.listWorkflowTasks(regA, { includeCompleted: true });
   assert.equal(all.length, 1);
   assert.equal(all[0].status, 'COMPLETED');
@@ -76,4 +70,14 @@ test('R0/R1 migration adds case type configuration, filing validation evidence a
   assert.match(sql, /CREATE TABLE IF NOT EXISTS workflow\.workflow_tasks/i);
   assert.match(sql, /REGISTRY_VALIDATE_FILING/i);
   assert.match(sql, /filing_id uuid NOT NULL REFERENCES registry\.filings\(filing_id\)/i);
+});
+
+test('registry decision migration persists return/reject/accept evidence', () => {
+  const sql = fs.readFileSync(path.join(process.cwd(), 'db/migrations/0003_registry_decisions.sql'), 'utf8');
+  assert.match(sql, /decision_reason text/i);
+  assert.match(sql, /decision_by_subject varchar\(255\)/i);
+  assert.match(sql, /decision_at timestamptz/i);
+  assert.match(sql, /RETURNED/);
+  assert.match(sql, /REJECTED/);
+  assert.match(sql, /ACCEPTED/);
 });
