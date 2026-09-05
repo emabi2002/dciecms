@@ -10,7 +10,7 @@ CREATE TABLE IF NOT EXISTS finance.fee_assessments (
   currency char(3) NOT NULL DEFAULT 'PGK',
   status varchar(30) NOT NULL DEFAULT 'ASSESSED',
   assessed_by_subject varchar(255) NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now(),
+  assessed_at timestamptz NOT NULL DEFAULT now(),
   CONSTRAINT fee_assessment_status_ck CHECK (status IN ('ASSESSED','VOID','PAID'))
 );
 
