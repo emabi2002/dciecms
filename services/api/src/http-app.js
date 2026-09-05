@@ -91,6 +91,26 @@ function createHttpApp(service, actorResolver) {
         const body = await readJson(req);
         return send(res, 200, await service.confirmPayment(actor, confirmPost[1], body.providerReference));
       }
+      const receiptPost = path.match(/^\/payments\/([^/]+)\/receipt$/);
+      if (req.method === 'POST' && receiptPost) {
+        await readJson(req);
+        return send(res, 201, await service.issueReceipt(actor, receiptPost[1]));
+      }
+      const reconciliationPost = path.match(/^\/payments\/([^/]+)\/reconciliations$/);
+      if (req.method === 'POST' && reconciliationPost) {
+        await readJson(req);
+        return send(res, 201, await service.createReconciliation(actor, reconciliationPost[1]));
+      }
+      const certifyPost = path.match(/^\/reconciliations\/([^/]+)\/certify$/);
+      if (req.method === 'POST' && certifyPost) {
+        await readJson(req);
+        return send(res, 200, await service.certifyReconciliation(actor, certifyPost[1]));
+      }
+      const openCasePost = path.match(/^\/filings\/([^/]+)\/open-case$/);
+      if (req.method === 'POST' && openCasePost) {
+        const body = await readJson(req);
+        return send(res, 201, await service.openCase(actor, openCasePost[1], body.paymentId));
+      }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
       return mapError(error, res);
