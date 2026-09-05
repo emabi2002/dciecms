@@ -30,6 +30,36 @@ function mapFiling(row) {
   });
 }
 
+function mapAssessment(row) {
+  if (!row) return null;
+  return Object.freeze({
+    assessmentId: row.assessment_id,
+    filingId: row.filing_id,
+    courtId: row.court_id,
+    amountMinor: Number(row.amount_minor),
+    currency: row.currency,
+    status: row.status,
+    assessedBy: row.assessed_by_subject,
+    createdAt: row.created_at
+  });
+}
+
+function mapPayment(row) {
+  if (!row) return null;
+  return Object.freeze({
+    paymentId: row.payment_id,
+    assessmentId: row.assessment_id,
+    courtId: row.court_id,
+    amountMinor: Number(row.amount_minor),
+    currency: row.currency,
+    status: row.status,
+    providerReference: row.provider_reference || null,
+    createdAt: row.created_at,
+    confirmedAt: row.confirmed_at || null,
+    confirmedBy: row.confirmed_by_subject || null
+  });
+}
+
 const FILING_COLUMNS = `filing_id, filing_reference, court_id, case_type_code,
   filer_party_id, status, created_by, created_at, submitted_at,
   validated_at, validated_by_subject, decision_reason, decision_by_subject, decision_at`;
@@ -132,6 +162,46 @@ class PostgresRepository {
     if (result.rows.length !== 1) { const e = new Error(`Filing cannot transition to ${toStatus}`); e.code='FILING_STATE_CONFLICT'; throw e; }
     return mapFiling(result.rows[0]);
   }
+
+  async createFeeAssessment({ assessmentId, filingId, courtId, amountMinor, currency, actorSubject, at }) {
+    const result = await this.db.query(`INSERT INTO finance.fee_assessments
+      (assessment_id, filing_id, court_id, amount_minor, currency, status, assessed_by_subject, created_at)
+      VALUES ($1,$2,$3,$4,$5,'ASSESSED',$6,$7)
+      RETURNING assessment_id, filing_id, court_id, amount_minor, currency, status, assessed_by_subject, created_at`,
+      [assessmentId, filingId, courtId, amountMinor, currency, actorSubject, at]);
+    return mapAssessment(result.rows[0]);
+  }
+
+  async getFeeAssessment(assessmentId) {
+    const result = await this.db.query(`SELECT assessment_id, filing_id, court_id, amount_minor, currency, status, assessed_by_subject, created_at
+      FROM finance.fee_assessments WHERE assessment_id=$1`, [assessmentId]);
+    return mapAssessment(result.rows[0]);
+  }
+
+  async createPayment({ paymentId, assessmentId, courtId, amountMinor, currency, actorSubject, at }) {
+    const result = await this.db.query(`INSERT INTO finance.payments
+      (payment_id, assessment_id, court_id, amount_minor, currency, status, created_by_subject, created_at)
+      VALUES ($1,$2,$3,$4,$5,'PENDING',$6,$7)
+      RETURNING payment_id, assessment_id, court_id, amount_minor, currency, status, provider_reference, created_at, confirmed_at, confirmed_by_subject`,
+      [paymentId, assessmentId, courtId, amountMinor, currency, actorSubject, at]);
+    return mapPayment(result.rows[0]);
+  }
+
+  async getPayment(paymentId) {
+    const result = await this.db.query(`SELECT payment_id, assessment_id, court_id, amount_minor, currency, status, provider_reference, created_at, confirmed_at, confirmed_by_subject
+      FROM finance.payments WHERE payment_id=$1`, [paymentId]);
+    return mapPayment(result.rows[0]);
+  }
+
+  async confirmPayment({ paymentId, providerReference, actorSubject, at }) {
+    const result = await this.db.query(`UPDATE finance.payments
+      SET status='CONFIRMED', provider_reference=$2, confirmed_at=$3, confirmed_by_subject=$4
+      WHERE payment_id=$1 AND status='PENDING'
+      RETURNING payment_id, assessment_id, court_id, amount_minor, currency, status, provider_reference, created_at, confirmed_at, confirmed_by_subject`,
+      [paymentId, providerReference, at, actorSubject]);
+    if (result.rows.length !== 1) { const e = new Error('Payment was not in PENDING state'); e.code='PAYMENT_STATE_CONFLICT'; throw e; }
+    return mapPayment(result.rows[0]);
+  }
 }
 
-module.exports = { PostgresRepository, mapParty, mapTask, mapFiling };
+module.exports = { PostgresRepository, mapParty, mapTask, mapFiling, mapAssessment, mapPayment };
