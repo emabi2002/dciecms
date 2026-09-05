@@ -216,6 +216,24 @@ class PersistentDciecmsService {
     this._audit(actor, 'finance.reconciliation.certify', 'reconciliation', reconciliationId, { courtId: reconciliation.courtId, paymentId: reconciliation.paymentId });
     return certified;
   }
+
+  async openCase(actor, filingId, paymentId) {
+    const filing = await this.repository.getFiling(filingId);
+    if (!filing) throw new NotFoundError('Filing not found');
+    authorize(actor, 'case.open', { courtId: filing.courtId });
+    if (filing.status !== 'ACCEPTED') throw new ConflictError(`Case opening requires ACCEPTED filing, got ${filing.status}`);
+    const existing = await this.repository.getCaseByFiling(filingId);
+    if (existing) return existing;
+    const payment = await this.repository.getPayment(paymentId);
+    if (!payment) throw new NotFoundError('Payment not found');
+    if (payment.courtId !== filing.courtId) throw new ConflictError('Payment is outside the filing court scope');
+    if (payment.status !== 'CONFIRMED') throw new ConflictError(`Case opening requires CONFIRMED payment, got ${payment.status}`);
+    const assessment = await this.repository.getFeeAssessment(payment.assessmentId);
+    if (!assessment || assessment.filingId !== filingId) throw new ConflictError('Payment assessment does not belong to the filing');
+    const opened = await this.repository.openCaseFromConfirmedPayment({ caseId: randomUUID(), filingId, paymentId, courtId: filing.courtId, caseTypeCode: filing.caseTypeCode, actorSubject: actor.userId, openedAt: new Date().toISOString() });
+    this._audit(actor, 'case.open', 'case', opened.caseId, { courtId: filing.courtId, filingId, paymentId, caseNumber: opened.caseNumber });
+    return opened;
+  }
 }
 
 module.exports = { PersistentDciecmsService };
