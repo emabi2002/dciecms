@@ -33,6 +33,26 @@ test('party and filing can be created through HTTP adapter',async()=>withServer(
   assert.equal(res.status,201); const filing=await res.json(); assert.equal(filing.status,'DRAFT');
 }));
 
+test('registry workflow tasks and filing validation are exposed through HTTP adapter',async()=>withServer(async(base)=>{
+  let res=await fetch(base+'/parties',{method:'POST',headers:hdr,body:JSON.stringify({courtId:'COURT-A',partyType:'PERSON',displayName:'Jane Doe'})});
+  const party=await res.json();
+  res=await fetch(base+'/filings',{method:'POST',headers:hdr,body:JSON.stringify({courtId:'COURT-A',caseTypeCode:'CIVIL',filerPartyId:party.partyId})});
+  const filing=await res.json();
+  res=await fetch(base+`/filings/${filing.filingId}/submit`,{method:'POST',headers:{...hdr,'idempotency-key':'http-submit-1'},body:'{}'});
+  assert.equal(res.status,200);
+
+  res=await fetch(base+'/workflow/tasks',{headers:hdr});
+  assert.equal(res.status,200); let tasks=await res.json(); assert.equal(tasks.length,1); assert.equal(tasks[0].filingId,filing.filingId);
+
+  res=await fetch(base+`/filings/${filing.filingId}/validate`,{method:'POST',headers:hdr,body:'{}'});
+  assert.equal(res.status,200); const validated=await res.json(); assert.equal(validated.status,'VALIDATED');
+
+  res=await fetch(base+'/workflow/tasks',{headers:hdr});
+  tasks=await res.json(); assert.equal(tasks.length,0);
+  res=await fetch(base+'/workflow/tasks?includeCompleted=true',{headers:hdr});
+  tasks=await res.json(); assert.equal(tasks.length,1); assert.equal(tasks[0].status,'COMPLETED');
+}));
+
 test('ICT admin receives 403 on registry queue without metadata leakage',async()=>withServer(async(base)=>{
   const res=await fetch(base+'/registry/filings',{headers:{'x-dev-sub':'ict','x-dev-roles':'ICT-ADMIN','x-dev-courts':'COURT-A'}});
   assert.equal(res.status,403); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
