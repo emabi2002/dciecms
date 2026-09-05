@@ -24,10 +24,15 @@ function mapReconciliation(row) {
   if (!row) return null;
   return Object.freeze({ reconciliationId:row.reconciliation_id, paymentId:row.payment_id, courtId:row.court_id, status:row.status, preparedBy:row.prepared_by_subject, preparedAt:row.prepared_at, certifiedBy:row.certified_by_subject||null, certifiedAt:row.certified_at||null });
 }
+function mapCase(row) {
+  if (!row) return null;
+  return Object.freeze({ caseId:row.case_id, caseNumber:row.case_number, filingId:row.filing_id, paymentId:row.payment_id, courtId:row.court_id, caseTypeCode:row.case_type_code, status:row.status, openedBy:row.opened_by_subject, openedAt:row.opened_at });
+}
 
 const FILING_COLUMNS = `filing_id, filing_reference, court_id, case_type_code,
   filer_party_id, status, created_by, created_at, submitted_at,
   validated_at, validated_by_subject, decision_reason, decision_by_subject, decision_at`;
+const CASE_COLUMNS = `case_id,case_number,filing_id,payment_id,court_id,case_type_code,status,opened_by_subject,opened_at`;
 
 class PostgresRepository {
   constructor(queryable) {
@@ -157,6 +162,28 @@ class PostgresRepository {
     if(result.rows.length!==1){ const e=new Error('Reconciliation was not certifiable'); e.code='RECONCILIATION_STATE_CONFLICT'; throw e; }
     return mapReconciliation(result.rows[0]);
   }
+  async getCaseByFiling(filingId) {
+    const result=await this.db.query(`SELECT ${CASE_COLUMNS} FROM case_mgmt.cases WHERE filing_id=$1`,[filingId]);
+    return mapCase(result.rows[0]);
+  }
+  async openCaseFromConfirmedPayment({ caseId, filingId, paymentId, courtId, caseTypeCode, actorSubject, openedAt }) {
+    if (typeof this.db.connect !== 'function') throw new TypeError('openCaseFromConfirmedPayment requires a pool with connect()');
+    const client=await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const existing=await client.query(`SELECT ${CASE_COLUMNS} FROM case_mgmt.cases WHERE filing_id=$1 FOR UPDATE`,[filingId]);
+      if(existing.rows.length){ await client.query('COMMIT'); return mapCase(existing.rows[0]); }
+      const court=await client.query(`SELECT court_code FROM config.courts WHERE court_id=$1`,[courtId]);
+      if(court.rows.length!==1){ const e=new Error('Court configuration not found'); e.code='COURT_NOT_FOUND'; throw e; }
+      const year=new Date(openedAt).getUTCFullYear();
+      const sequence=await client.query(`INSERT INTO case_mgmt.case_number_sequences (court_id,case_type_code,case_year,last_value,updated_at) VALUES ($1,$2,$3,1,$4) ON CONFLICT (court_id,case_type_code,case_year) DO UPDATE SET last_value=case_mgmt.case_number_sequences.last_value+1,updated_at=EXCLUDED.updated_at RETURNING last_value`,[courtId,caseTypeCode,year,openedAt]);
+      const number=String(sequence.rows[0].last_value).padStart(6,'0');
+      const caseNumber=`${court.rows[0].court_code}-${caseTypeCode}-${year}-${number}`;
+      const inserted=await client.query(`INSERT INTO case_mgmt.cases (case_id,case_number,filing_id,payment_id,court_id,case_type_code,status,opened_by_subject,opened_at) VALUES ($1,$2,$3,$4,$5,$6,'AWAITING_ASSIGNMENT',$7,$8) RETURNING ${CASE_COLUMNS}`,[caseId,caseNumber,filingId,paymentId,courtId,caseTypeCode,actorSubject,openedAt]);
+      await client.query('COMMIT');
+      return mapCase(inserted.rows[0]);
+    } catch(error) { try{await client.query('ROLLBACK');}catch{} throw error; } finally { client.release(); }
+  }
 }
 
-module.exports = { PostgresRepository, mapParty, mapTask, mapFiling, mapDocument, mapReceipt, mapReconciliation };
+module.exports = { PostgresRepository, mapParty, mapTask, mapFiling, mapDocument, mapReceipt, mapReconciliation, mapCase };
