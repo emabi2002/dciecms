@@ -8,7 +8,7 @@ class AccessDeniedError extends Error {
 
 const ROLE_PERMISSIONS = Object.freeze({
   'REG': new Set(['party.create','party.view','party.search','filing.create','filing.view','filing.edit','filing.submit','filing.validate','filing.return','document.upload','document.view','task.view']),
-  'REG-MGR': new Set(['party.create','party.view','party.search','filing.create','filing.view','filing.edit','filing.submit','filing.validate','filing.return','filing.reject','filing.accept','document.upload','document.view','task.view']),
+  'REG-MGR': new Set(['party.create','party.view','party.search','filing.create','filing.view','filing.edit','filing.submit','filing.validate','filing.return','filing.reject','filing.accept','document.upload','document.view','task.view','case.open']),
   'FIN': new Set(['filing.view','finance.assess','finance.payment.create','finance.payment.view','finance.receipt.issue','finance.receipt.view','finance.reconciliation.create','finance.reconciliation.view']),
   'FIN-MGR': new Set(['filing.view','finance.assess','finance.payment.create','finance.payment.view','finance.payment.confirm','finance.receipt.issue','finance.receipt.view','finance.reconciliation.create','finance.reconciliation.view','finance.reconciliation.certify']),
   'LEGAL': new Set(['party.create','party.view','filing.create','filing.view','filing.edit','filing.submit','document.upload','document.view']),
