@@ -62,6 +62,35 @@ function createHttpApp(service, actorResolver) {
         await readJson(req);
         return send(res, 200, await service.validateFiling(actor, validatePost[1]));
       }
+      const returnPost = path.match(/^\/filings\/([^/]+)\/return$/);
+      if (req.method === 'POST' && returnPost) {
+        const body = await readJson(req);
+        return send(res, 200, await service.returnFiling(actor, returnPost[1], body.reason));
+      }
+      const rejectPost = path.match(/^\/filings\/([^/]+)\/reject$/);
+      if (req.method === 'POST' && rejectPost) {
+        const body = await readJson(req);
+        return send(res, 200, await service.rejectFiling(actor, rejectPost[1], body.reason));
+      }
+      const acceptPost = path.match(/^\/filings\/([^/]+)\/accept$/);
+      if (req.method === 'POST' && acceptPost) {
+        await readJson(req);
+        return send(res, 200, await service.acceptFiling(actor, acceptPost[1]));
+      }
+      const assessmentPost = path.match(/^\/filings\/([^/]+)\/fee-assessments$/);
+      if (req.method === 'POST' && assessmentPost) {
+        return send(res, 201, await service.assessFilingFee(actor, assessmentPost[1], await readJson(req)));
+      }
+      const paymentPost = path.match(/^\/fee-assessments\/([^/]+)\/payments$/);
+      if (req.method === 'POST' && paymentPost) {
+        await readJson(req);
+        return send(res, 201, await service.createPayment(actor, paymentPost[1]));
+      }
+      const confirmPost = path.match(/^\/payments\/([^/]+)\/confirm$/);
+      if (req.method === 'POST' && confirmPost) {
+        const body = await readJson(req);
+        return send(res, 200, await service.confirmPayment(actor, confirmPost[1], body.providerReference));
+      }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
       return mapError(error, res);
