@@ -40,6 +40,9 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/registry/filings') {
         return send(res, 200, service.listRegistryQueue(actor));
       }
+      if (req.method === 'GET' && path === '/workflow/tasks') {
+        return send(res, 200, service.listWorkflowTasks(actor, { includeCompleted: url.searchParams.get('includeCompleted') === 'true' }));
+      }
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) {
@@ -53,6 +56,11 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && submitPost) {
         const body = await readJson(req);
         return send(res, 200, service.submitFiling(actor, submitPost[1], req.headers['idempotency-key'] || body.idempotencyKey));
+      }
+      const validatePost = path.match(/^\/filings\/([^/]+)\/validate$/);
+      if (req.method === 'POST' && validatePost) {
+        await readJson(req);
+        return send(res, 200, service.validateFiling(actor, validatePost[1]));
       }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
