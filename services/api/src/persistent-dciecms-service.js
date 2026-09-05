@@ -58,6 +58,41 @@ class PersistentDciecmsService {
     return filing;
   }
 
+  async listRegistryQueue(actor) {
+    authorize(actor, 'filing.view', {});
+    this._requireRegistry(actor);
+    const rows = await this.repository.listRegistryQueue({ courtIds: actor.courtIds });
+    this._audit(actor, 'registry.queue.view', 'filing_queue', actor.courtIds.join(','), { courtIds: actor.courtIds });
+    return rows;
+  }
+
+  async registerDocument(actor, filingId, metadata) {
+    const filing = await this._filingForAccess(actor, filingId, 'filing.view');
+    authorize(actor, 'document.upload', { courtId: filing.courtId });
+    if (!metadata?.fileName || !metadata?.mimeType || !metadata?.checksumSha256) throw new ValidationError('fileName, mimeType and checksumSha256 are required');
+    if (!/^[a-f0-9]{64}$/i.test(metadata.checksumSha256)) throw new ValidationError('checksumSha256 must be a SHA-256 hex digest');
+    const document = await this.repository.createDocument({
+      documentId: randomUUID(),
+      filingId,
+      courtId: filing.courtId,
+      fileName: metadata.fileName,
+      mimeType: metadata.mimeType,
+      sizeBytes: Number(metadata.sizeBytes || 0),
+      checksumSha256: metadata.checksumSha256.toLowerCase(),
+      classification: metadata.classification || 'CONFIDENTIAL'
+    });
+    this._audit(actor, 'document.upload', 'document', document.documentId, { courtId: filing.courtId, filingId });
+    return document;
+  }
+
+  async getDocument(actor, documentId) {
+    const document = await this.repository.getDocument(documentId);
+    if (!document) throw new NotFoundError('Document not found');
+    authorize(actor, 'document.view', { courtId: document.courtId });
+    this._audit(actor, 'document.view', 'document', document.documentId, { courtId: document.courtId, filingId: document.filingId });
+    return document;
+  }
+
   async submitFiling(actor, filingId, idempotencyKey) {
     if (!idempotencyKey) throw new ValidationError('Idempotency key is required');
     const filing = await this._filingForAccess(actor, filingId, 'filing.submit');
