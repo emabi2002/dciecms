@@ -26,6 +26,9 @@ jobs:
         with:
           node-version: '20'
 
+      - name: Install dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
       - name: Show runtime
         run: node --version
 
