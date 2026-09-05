@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - feat/first-vertical-slice
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install backend dependencies
+        run: npm install --ignore-scripts --no-audit --no-fund
+
+      - name: Show runtime
+        run: node --version
+
+      - name: Run backend test suite
+        run: npm test
+
+      - name: Install Court Workspace dependencies
+        run: npm --prefix apps/court-workspace install --ignore-scripts --no-audit --no-fund
+
+      - name: Run Court Workspace tests
+        run: npm run test:frontend
+
+      - name: Build Court Workspace
+        run: npm run build:frontend
