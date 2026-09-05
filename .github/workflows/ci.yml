@@ -26,11 +26,20 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Install dependencies
+      - name: Install backend dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
       - name: Show runtime
         run: node --version
 
-      - name: Run full test suite
+      - name: Run backend test suite
         run: npm test
+
+      - name: Install Court Workspace dependencies
+        run: npm --prefix apps/court-workspace install --ignore-scripts --no-audit --no-fund
+
+      - name: Run Court Workspace tests
+        run: npm run test:frontend
+
+      - name: Build Court Workspace
+        run: npm run build:frontend
