@@ -43,6 +43,8 @@ test('registry validation transitions filing and completes the workflow task', (
   const { svc, filing } = submittedFiling();
   const validated = svc.validateFiling(regA, filing.filingId);
   assert.equal(validated.status, 'VALIDATED');
+  assert.equal(validated.validatedBy, 'reg-a');
+  assert.ok(validated.validatedAt);
 
   const active = svc.listWorkflowTasks(regA);
   assert.equal(active.length, 0);
@@ -66,9 +68,11 @@ test('draft filing cannot be validated before submission', () => {
   assert.throws(() => svc.validateFiling(regA, filing.filingId), ConflictError);
 });
 
-test('R0/R1 migration adds case type configuration and workflow tasks', () => {
+test('R0/R1 migration adds case type configuration, filing validation evidence and workflow tasks', () => {
   const sql = fs.readFileSync(path.join(process.cwd(), 'db/migrations/0002_config_workflow.sql'), 'utf8');
   assert.match(sql, /CREATE TABLE IF NOT EXISTS config\.case_types/i);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS validated_at timestamptz/i);
+  assert.match(sql, /ADD COLUMN IF NOT EXISTS validated_by_subject varchar\(255\)/i);
   assert.match(sql, /CREATE TABLE IF NOT EXISTS workflow\.workflow_tasks/i);
   assert.match(sql, /REGISTRY_VALIDATE_FILING/i);
   assert.match(sql, /filing_id uuid NOT NULL REFERENCES registry\.filings\(filing_id\)/i);
