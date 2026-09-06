@@ -30,6 +30,17 @@ const PAYMENT_ROW = {
   confirmed_at:null
 };
 
+const RECONCILIATION_ROW = {
+  reconciliation_id:'cccccccc-cccc-cccc-cccc-cccccccccccc',
+  payment_id:PAYMENT_ROW.payment_id,
+  court_id:PAYMENT_ROW.court_id,
+  status:'CERTIFIED',
+  prepared_by_subject:'fin-a',
+  prepared_at:'2026-09-06T06:05:00.000Z',
+  certified_by_subject:'fin-mgr-a',
+  certified_at:'2026-09-06T06:10:00.000Z'
+};
+
 test('R3 finance repository extends the existing repository chain', () => {
   const FinanceOperationsPostgresRepository = loadFinanceRepository();
   assert.equal(typeof FinanceOperationsPostgresRepository, 'function');
@@ -63,4 +74,16 @@ test('finance queue applies status as a bound parameter', async () => {
   assert.match(db.calls[0].text, /status = \$2/i);
   assert.equal(db.calls[0].text.includes('CONFIRMED'), false);
   assert.deepEqual(db.calls[0].params, [['11111111-1111-1111-1111-111111111111'], 'CONFIRMED']);
+});
+
+test('finance repository reads reconciliation evidence by payment using a bound identifier', async () => {
+  const FinanceOperationsPostgresRepository = loadFinanceRepository();
+  const db = new FakeQueryable([RECONCILIATION_ROW]);
+  const repo = new FinanceOperationsPostgresRepository(db);
+  const row = await repo.getReconciliationByPayment(PAYMENT_ROW.payment_id);
+  assert.equal(row.reconciliationId, RECONCILIATION_ROW.reconciliation_id);
+  assert.equal(row.paymentId, PAYMENT_ROW.payment_id);
+  assert.match(db.calls[0].text, /FROM finance\.reconciliations/i);
+  assert.match(db.calls[0].text, /payment_id=\$1/i);
+  assert.deepEqual(db.calls[0].params, [PAYMENT_ROW.payment_id]);
 });
