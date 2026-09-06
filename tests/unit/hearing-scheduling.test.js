@@ -69,6 +69,17 @@ test('adjournment requires a reason and records immutable history evidence',asyn
   assert.equal(repo.history[0].fromStart,'2026-09-07T09:00:00.000Z');
 });
 
+test('adjournment rejects malformed next dates as validation errors',async()=>{
+  const repo=new HearingRepository();
+  const svc=new JudicialOperationsService({repository:repo});
+  const hearing=await svc.scheduleHearing(cmag,CASE_A,scheduleInput);
+  await assert.rejects(
+    ()=>svc.adjournHearing(cmag,hearing.hearingId,{reason:'Reset',nextStart:'not-a-date',nextEnd:'2026-09-14T09:30:00.000Z'}),
+    (error)=>error && error.name==='ValidationError' && /schedule is invalid/i.test(error.message)
+  );
+  assert.equal(repo.history.length,0);
+});
+
 test('daily list returns hearings only within actor court scope and requested date',async()=>{
   const repo=new HearingRepository();
   const svc=new JudicialOperationsService({repository:repo});
