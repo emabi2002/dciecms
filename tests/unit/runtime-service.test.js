@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const { DciecmsService } = require('../../services/api/src/dciecms-service');
 const { JudicialWorkbenchService } = require('../../services/api/src/judicial-workbench-service');
 const { JudgmentPostgresRepository } = require('../../services/api/src/judgment-postgres-repository');
+const { PostgresAuditStore } = require('../../services/api/src/postgres-audit-store');
 const { createRuntimeService } = require('../../services/api/src/runtime-service');
 
 test('runtime service uses in-memory implementation when DATABASE_URL is absent', () => {
@@ -11,7 +12,7 @@ test('runtime service uses in-memory implementation when DATABASE_URL is absent'
   assert.ok(service instanceof DciecmsService);
 });
 
-test('runtime service uses Judicial Workbench with judgment-capable PostgreSQL repository when DATABASE_URL is present', () => {
+test('runtime service uses Judicial Workbench with judgment-capable PostgreSQL repository and durable audit when DATABASE_URL is present', () => {
   class FakePool {
     constructor(options) { this.options = options; }
     async query() { return { rows: [] }; }
@@ -20,7 +21,9 @@ test('runtime service uses Judicial Workbench with judgment-capable PostgreSQL r
   const service = createRuntimeService({ env: { DATABASE_URL: 'postgres://example/db' }, PoolClass: FakePool });
   assert.ok(service instanceof JudicialWorkbenchService);
   assert.ok(service.repository instanceof JudgmentPostgresRepository);
+  assert.ok(service.audit instanceof PostgresAuditStore);
   assert.equal(service.repository.db.options.connectionString, 'postgres://example/db');
+  assert.equal(service.audit.db, service.repository.db);
   assert.equal(typeof service.assignCase, 'function');
   assert.equal(typeof service.listMyCases, 'function');
   assert.equal(typeof service.createJudgment, 'function');
