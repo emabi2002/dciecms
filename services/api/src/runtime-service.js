@@ -72,6 +72,7 @@ function createRuntimeService({
     documentScanWorker = new DocumentScanWorker({
       repository,
       scanStore: documentScanStore,
+      storage: documentRuntime.storage,
       scanner: documentRuntime.scanner,
       auditStore,
       transactionManager: database,
