@@ -80,6 +80,15 @@ test('adjournment rejects malformed next dates as validation errors',async()=>{
   assert.equal(repo.history.length,0);
 });
 
+test('daily list rejects calendar-impossible dates before repository access',async()=>{
+  const repo=new HearingRepository();
+  const svc=new JudicialOperationsService({repository:repo});
+  await assert.rejects(
+    ()=>svc.listDailyHearings(cmag,{date:'2026-02-30'}),
+    (error)=>error && error.name==='ValidationError' && /YYYY-MM-DD/i.test(error.message)
+  );
+});
+
 test('daily list returns hearings only within actor court scope and requested date',async()=>{
   const repo=new HearingRepository();
   const svc=new JudicialOperationsService({repository:repo});
