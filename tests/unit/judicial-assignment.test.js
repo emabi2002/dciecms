@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { resolveActorFromClaims } = require('../../packages/auth');
-const { PersistentDciecmsService } = require('../../services/api/src/persistent-dciecms-service');
+const { JudicialOperationsService } = require('../../services/api/src/judicial-operations-service');
 
 const COURT_A = '11111111-1111-1111-1111-111111111111';
 const COURT_B = '22222222-2222-2222-2222-222222222222';
@@ -49,7 +49,7 @@ class JudicialRepository {
 }
 
 test('CMAG assigns an open case to an active magistrate in the same court', async () => {
-  const svc = new PersistentDciecmsService({ repository: new JudicialRepository() });
+  const svc = new JudicialOperationsService({ repository: new JudicialRepository() });
   const assigned = await svc.assignCase(cmag, CASE_A, { assigneeSubject: 'mag-a' });
   assert.equal(assigned.status, 'ASSIGNED');
   assert.equal(assigned.assignedToSubject, 'mag-a');
@@ -57,24 +57,24 @@ test('CMAG assigns an open case to an active magistrate in the same court', asyn
 });
 
 test('MAG cannot assign a case', async () => {
-  const svc = new PersistentDciecmsService({ repository: new JudicialRepository() });
+  const svc = new JudicialOperationsService({ repository: new JudicialRepository() });
   await assert.rejects(() => svc.assignCase(mag, CASE_A, { assigneeSubject: 'mag-a' }), /Permission denied|case.assign/i);
 });
 
 test('CMAG cannot assign a case to a magistrate outside the case court', async () => {
-  const svc = new PersistentDciecmsService({ repository: new JudicialRepository() });
+  const svc = new JudicialOperationsService({ repository: new JudicialRepository() });
   await assert.rejects(() => svc.assignCase(cmag, CASE_A, { assigneeSubject: magB.userId }), /magistrate|court/i);
 });
 
 test('stale or duplicate case assignment returns a conflict instead of overwriting responsibility', async () => {
-  const svc = new PersistentDciecmsService({ repository: new JudicialRepository() });
+  const svc = new JudicialOperationsService({ repository: new JudicialRepository() });
   await svc.assignCase(cmag, CASE_A, { assigneeSubject: 'mag-a' });
   await assert.rejects(() => svc.assignCase(cmag, CASE_A, { assigneeSubject: 'mag-a' }), /conflict|assigned/i);
 });
 
 test('MAG judicial work queue contains only cases assigned to that magistrate', async () => {
   const repo = new JudicialRepository();
-  const svc = new PersistentDciecmsService({ repository: repo });
+  const svc = new JudicialOperationsService({ repository: repo });
   await svc.assignCase(cmag, CASE_A, { assigneeSubject: 'mag-a' });
   const mine = await svc.listMyCases(mag);
   assert.equal(mine.length, 1);
