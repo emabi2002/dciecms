@@ -131,6 +131,21 @@ test('caller cannot choose storage key and normal document service exposes no ha
   assert.equal(typeof service.deleteDocument, 'undefined');
 });
 
+test('unprivileged uploader cannot downgrade initial document classification', async () => {
+  const { service } = securityFixture();
+  await assert.rejects(
+    () => service.initiateDocumentUpload(actor(), 'F-OWN', {
+      fileName: 'claim.pdf', mimeType: 'application/pdf', sizeBytes: 12, classification: 'PUBLIC'
+    }),
+    /classification|permission/i
+  );
+  await assert.doesNotReject(
+    () => service.initiateDocumentUpload(actor({ sub: 'reg-mgr-a', roles: ['REG-MGR'] }), 'F-OWN', {
+      fileName: 'court-notice.pdf', mimeType: 'application/pdf', sizeBytes: 12, classification: 'PUBLIC'
+    })
+  );
+});
+
 test('ordinary download remains fail-closed for quarantined, superseded, withdrawn and restricted-without-grant records', async () => {
   const { service, documents } = securityFixture();
   for (const status of ['QUARANTINED', 'SUPERSEDED', 'WITHDRAWN']) {
