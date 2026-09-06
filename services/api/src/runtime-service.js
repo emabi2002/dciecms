@@ -3,6 +3,7 @@ const { DciecmsService } = require('./dciecms-service');
 const { JudicialWorkbenchService } = require('./judicial-workbench-service');
 const { JudgmentPostgresRepository } = require('./judgment-postgres-repository');
 const { PostgresAuditStore } = require('./postgres-audit-store');
+const { PostgresOutboxStore } = require('./postgres-outbox-store');
 const { PostgresTransactionManager } = require('./postgres-transaction-manager');
 const { createTransactionalService } = require('./transactional-service');
 const { createPostgresPool } = require('./postgres-runtime');
@@ -17,7 +18,8 @@ function createRuntimeService({ env = process.env, PoolClass } = {}) {
   const database = new PostgresTransactionManager(mappedDatabase);
   const repository = new JudgmentPostgresRepository(database);
   const auditStore = new PostgresAuditStore(database);
-  const service = new JudicialWorkbenchService({ repository, auditStore });
+  const outboxStore = new PostgresOutboxStore(database);
+  const service = new JudicialWorkbenchService({ repository, auditStore, outboxStore });
 
   return createTransactionalService(service, database);
 }
