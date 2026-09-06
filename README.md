@@ -4,9 +4,9 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-PR #1 has been merged into `main`. The repository now contains the executable R0/R1 court-management vertical slice together with the first R2 judicial-operations implementation.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, and the first R3 reliability-hardening controls.
 
-### R0/R1 capabilities now on `main`
+### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
 - party creation and filing drafts
 - controlled case-type validation
@@ -25,7 +25,7 @@ PR #1 has been merged into `main`. The repository now contains the executable R0
 - typed frontend API client with explicit HTTP error mapping
 - keyboard-accessible navigation, skip link and responsive table/form baseline
 
-### R2 judicial-operations capabilities now on `main`
+### R2 judicial-operations capabilities
 - judicial case assignment and assigned-case work queues
 - hearing scheduling, daily lists and adjournment workflows
 - hearing-mode controls and proceeding-state capture
@@ -35,10 +35,24 @@ PR #1 has been merged into `main`. The repository now contains the executable R0
 - PostgreSQL repositories and HTTP routes for judicial operations
 - backend, frontend and regression tests covering judicial operations
 
+### R3 reliability-hardening capabilities
+- migration `0011_durable_controls.sql` for durable request-control state
+- PostgreSQL-backed filing-submission idempotency scoped by actor, operation, filing and idempotency key
+- atomic first-submission transaction covering idempotency claim, `DRAFT -> SUBMITTED`, Registry task creation and canonical response persistence
+- restart-safe replay of the original filing-submission response without repeating the filing mutation or workflow-task creation
+- rollback of the idempotency claim when the business transition fails
+- PostgreSQL-backed application audit store using `audit.audit_events.actor_subject`
+- awaited audit persistence across Registry, finance, case-opening, judicial, hearing, proceeding and judgment/Workbench service paths
+- PostgreSQL runtime injection of the durable audit store when `DATABASE_URL` is configured
+- Supabase isolated-test profile mapping and incremental `dciecms_test` migration for R3 durable controls
+
+R3 does **not** yet claim that every business mutation and its audit event are committed in one physical database transaction. Full mutation+audit transaction coupling and a durable notification/event outbox remain later reliability controls.
+
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
-- live Supabase smoke-test workflow and migration bundle exist for controlled verification
-- production deployment is not implied by the presence of deployment or smoke-test tooling
+- live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
+- the Supabase R3 migration is provided as `db/supabase/20260906_dciecms_test_0011.sql`; its presence does not mean it has been executed against any live environment
+- production deployment is not implied by the presence of deployment, migration or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -78,6 +92,6 @@ The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is req
 
 The `x-dev-*` request headers are development-only scaffolding. They are **not production authentication**. Production must use validated identity claims from the approved IdP/API gateway and must preserve the RBAC, scope, record-relationship and confidentiality checks defined in the DCIECMS security baseline.
 
-The browser is not an authorization boundary. Court scope, workflow transitions, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
+The browser is not an authorization boundary. Court scope, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
 
 Real private object storage, malware scanning, external payment-gateway callbacks, production IdP integration, email/SMS providers, government-agency integrations, production hosting credentials, WAF/secrets-vault configuration and the production observability stack remain intentionally outside the current repository baseline until those external environments and credentials are approved.
