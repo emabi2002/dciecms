@@ -114,7 +114,7 @@ class PostgresOutboxStore {
     const leaseCutoff = new Date(Date.parse(nowIso) - leaseTimeoutMs).toISOString();
 
     const result = await this.db.query(`WITH candidates AS (
-      SELECT outbox_event_id
+      SELECT outbox_event_id AS candidate_id
       FROM integration.outbox_events
       WHERE (status='PENDING' AND next_attempt_at <= $1::timestamptz)
          OR (status='PROCESSING' AND locked_at <= $2::timestamptz)
@@ -125,7 +125,7 @@ class PostgresOutboxStore {
     UPDATE integration.outbox_events AS outbox
     SET status='PROCESSING', locked_at=$1::timestamptz, locked_by=$4
     FROM candidates
-    WHERE outbox.outbox_event_id=candidates.outbox_event_id
+    WHERE outbox.outbox_event_id=candidates.candidate_id
     RETURNING ${OUTBOX_COLUMNS}`, [nowIso, leaseCutoff, limit, owner]);
 
     return result.rows.map(mapOutboxRow);
