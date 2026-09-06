@@ -230,7 +230,7 @@ test('secure document mutation and audit evidence share the outer transaction an
 
   await assert.rejects(
     () => service.changeDocumentClassification(documentManager, 'D-1', {
-      classification: 'RESTRICTED',
+      classification: 'INTERNAL',
       reason: 'Court direction'
     }),
     /document audit insert failed/
