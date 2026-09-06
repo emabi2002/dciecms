@@ -4,7 +4,7 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, and R5 durable event/outbox infrastructure for PostgreSQL-backed mutations.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, and a provider-neutral production OIDC/JWT authentication boundary. No real government IdP, production credential, live database migration or production deployment is implied by this repository state.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
@@ -72,11 +72,25 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - outbox enqueue failure rolls back preceding business mutation and audit work
 - delivery semantics are **at least once**; every eventual downstream/provider handler must be idempotent using the outbox event ID, deduplication key or an equivalent provider-side mechanism
 
+### Production authentication boundary capabilities
+- explicit `DCIECMS_AUTH_MODE=development|oidc`; authentication mode is mandatory
+- development authentication is rejected when `NODE_ENV=production`
+- production OIDC mode requires HTTPS issuer/JWKS metadata, API audience and an explicit asymmetric signing-algorithm allow-list
+- JOSE/JWKS bearer-token verification validates signature, exact issuer, audience, `exp`, `nbf`, signing algorithm and subject before authorization claims are used
+- verified `sub`, `roles`, `court_ids` and `explicit_grants` are strictly type-checked and mapped into the canonical actor used by existing RBAC/court-scope controls
+- invalid credentials return sanitized 401 responses with `WWW-Authenticate: Bearer`; authenticated authorization failures remain 403; temporary JWKS verification infrastructure failures fail closed as sanitized 503
+- bearer tokens and verifier internals are excluded from application actors and authentication error responses
+- authentication construction completes before the HTTP server can listen; invalid configuration cannot silently fall back to development identity
+- Court Workspace supports an injected runtime access-token provider and sends `Authorization: Bearer <token>` without decoding JWTs or making frontend authorization decisions
+- when a Court Workspace token provider is configured, development identity headers are suppressed even when no token is temporarily available
+- no browser login/PKCE flow, real government IdP registration, live issuer/JWKS metadata, client credentials or production activation is included in this repository baseline
+
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
 - live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
 - Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`) and R5 (`db/supabase/20260906_dciecms_test_0012.sql`); their presence does not mean they have been executed against any live environment
-- production deployment is not implied by the presence of deployment, migration, outbox or smoke-test tooling
+- production-authentication regressions cover invalid signature, issuer, audience, time validity, subject/claim shape, signing algorithm, unknown keys, JWKS failure isolation, startup fail-closed behavior, token non-propagation, sanitized 401/503/500 behavior and 401/403 separation
+- production deployment is not implied by the presence of deployment, migration, authentication, outbox or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -104,18 +118,25 @@ Build the production frontend bundle:
 npm run build:frontend
 ```
 
-Run the backend tests:
+Install root dependencies and run the backend tests:
 
 ```bash
+npm install
 npm test
 ```
 
-The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is required. Development identity headers are emitted only when `VITE_DCIECMS_DEV_IDENTITY=true`; that mechanism is development scaffolding and is not production authentication.
+Start the local API with the authentication mode explicitly selected:
+
+```bash
+DCIECMS_AUTH_MODE=development PORT=3000 npm start
+```
+
+The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is required. Development identity headers are emitted only when `VITE_DCIECMS_DEV_IDENTITY=true`; that mechanism remains development scaffolding and is not production authentication. Production bearer tokens are supplied at runtime through the API client's access-token-provider seam, not through a `VITE_*` token value.
 
 ## Important security boundary
 
-The `x-dev-*` request headers are development-only scaffolding. They are **not production authentication**. Production must use validated identity claims from the approved IdP/API gateway and must preserve the RBAC, scope, record-relationship and confidentiality checks defined in the DCIECMS security baseline.
+The `x-dev-*` request headers are development-only scaffolding. They are **not production authentication**, and production runtime configuration cannot select development authentication mode. OIDC mode accepts bearer credentials only after signature, issuer, audience, time-validity, subject and allowed-algorithm verification through the configured JWKS boundary.
 
 The browser is not an authorization boundary. Court scope, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
 
-Real private object storage, malware scanning, external payment-gateway callbacks, production IdP integration, email/SMS providers, government-agency integrations, permanent outbox worker scheduling, production hosting credentials, WAF/secrets-vault configuration and the production observability stack remain intentionally outside the current repository baseline until those external environments and credentials are approved.
+Real government IdP registration/browser login, private object storage, malware scanning, external payment-gateway callbacks, email/SMS providers, government-agency integrations, permanent outbox worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
