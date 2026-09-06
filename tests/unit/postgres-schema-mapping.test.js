@@ -22,6 +22,18 @@ test('Supabase test profile rewrites logical schema-qualified tables to dciecms_
   assert.deepEqual(seen[0].params, ['case-1']);
 });
 
+test('Supabase test profile maps R3 finance exceptions and notification outbox tables', async () => {
+  const seen=[];
+  const db={async query(text){seen.push(text);return {rows:[]};}};
+  const mapped=createMappedDatabase(db,'supabase_test');
+  await mapped.query('SELECT * FROM finance.payment_exceptions');
+  await mapped.query('SELECT * FROM notifications.notifications');
+  await mapped.query('SELECT * FROM notifications.delivery_attempts');
+  assert.match(seen[0],/dciecms_test\.finance_payment_exceptions/);
+  assert.match(seen[1],/dciecms_test\.notifications/);
+  assert.match(seen[2],/dciecms_test\.notification_delivery_attempts/);
+});
+
 test('mapping is applied to transactional clients returned by connect()', async () => {
   const seen = [];
   const client = {
