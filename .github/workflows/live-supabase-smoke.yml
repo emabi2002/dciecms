@@ -36,7 +36,17 @@ jobs:
             exit 1
           fi
 
-      # Trigger refreshed live smoke after database credential update.
+      - name: Diagnose database target safely
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const u = new URL(process.env.DATABASE_URL);
+          console.log(`db_user=${decodeURIComponent(u.username)}`);
+          console.log(`db_host=${u.hostname}`);
+          console.log(`db_port=${u.port || '5432'}`);
+          console.log(`db_name=${u.pathname.replace(/^\//, '')}`);
+          NODE
+
       - name: Install backend dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
