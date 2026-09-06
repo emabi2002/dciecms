@@ -25,10 +25,32 @@ function emptyRunSummary() {
   return { claimed:0, clean:0, infected:0, retryable:0, permanentFailure:0 };
 }
 
+function storageEvidenceMatches(document, evidence) {
+  if (!document || !evidence) return false;
+  const expectedKey=String(document.storageObjectKey || '').trim();
+  const actualKey=String(evidence.objectKey || expectedKey).trim();
+  if (!expectedKey || actualKey !== expectedKey) return false;
+
+  const expectedSize=Number(document.sizeBytes);
+  const actualSize=Number(evidence.sizeBytes);
+  if (!Number.isSafeInteger(expectedSize) || expectedSize <= 0 || actualSize !== expectedSize) return false;
+
+  const expectedChecksum=String(document.checksumSha256 || '').trim().toLowerCase();
+  const actualChecksum=String(evidence.checksumSha256 || '').trim().toLowerCase();
+  if (!/^[a-f0-9]{64}$/.test(expectedChecksum) || actualChecksum !== expectedChecksum) return false;
+
+  const expectedMime=String(document.detectedMimeType || document.mimeType || '').trim().toLowerCase();
+  const actualMime=String(evidence.detectedMimeType || '').trim().toLowerCase();
+  if (!expectedMime || actualMime !== expectedMime) return false;
+
+  return true;
+}
+
 class DocumentScanWorker {
   constructor({
     repository,
     scanStore,
+    storage,
     scanner,
     auditStore,
     transactionManager,
@@ -47,11 +69,13 @@ class DocumentScanWorker {
     requiredMethod(scanStore,'markInfected','scanStore');
     requiredMethod(scanStore,'markRetryableFailure','scanStore');
     requiredMethod(scanStore,'markPermanentFailure','scanStore');
+    requiredMethod(storage,'headObject','storage');
     requiredMethod(auditStore,'append','auditStore');
     requiredMethod(transactionManager,'withTransaction','transactionManager');
     assertMalwareScanner(scanner);
     this.repository=repository;
     this.scanStore=scanStore;
+    this.storage=storage;
     this.scanner=scanner;
     this.auditStore=auditStore;
     this.transactionManager=transactionManager;
@@ -145,6 +169,18 @@ class DocumentScanWorker {
     const nowIso=this._nowIso();
     const document=await this.repository.getDocument(job.documentId);
     if(!document || document.status!=='QUARANTINED') {
+      await this._permanent(job,document,'ERROR_PERMANENT',nowIso);
+      return 'permanentFailure';
+    }
+
+    let storageEvidence;
+    try {
+      storageEvidence=await this.storage.headObject({objectKey:document.storageObjectKey});
+    } catch {
+      await this._retry(job,document,'STORAGE_UNAVAILABLE',nowIso);
+      return 'retryable';
+    }
+    if(!storageEvidenceMatches(document,storageEvidence)) {
       await this._permanent(job,document,'ERROR_PERMANENT',nowIso);
       return 'permanentFailure';
     }
@@ -269,4 +305,4 @@ class DocumentScanWorker {
   }
 }
 
-module.exports={DocumentScanWorker,emptyRunSummary};
+module.exports={DocumentScanWorker,emptyRunSummary,storageEvidenceMatches};
