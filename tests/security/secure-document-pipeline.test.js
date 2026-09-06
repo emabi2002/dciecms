@@ -150,6 +150,41 @@ test('PUBLIC actors cannot authorize another filer\'s document even when both re
   );
 });
 
+test('INTERNAL classification excludes PUBLIC-only actors even for their own filing', async () => {
+  const { service, documents } = securityFixture();
+  documents.set('DOC-INTERNAL', activeDocument({ documentId: 'DOC-INTERNAL', classification: 'INTERNAL' }));
+  await assert.rejects(
+    () => service.authorizeDocumentDownload(actor({ sub: 'public-a', roles: ['PUBLIC'] }), 'DOC-INTERNAL'),
+    /internal|access denied|permission/i
+  );
+  await assert.doesNotReject(
+    () => service.authorizeDocumentDownload(actor({ sub: 'reg-a', roles: ['REG'] }), 'DOC-INTERNAL')
+  );
+});
+
+test('legacy metadata-only document registration route is not exposed by the secure HTTP boundary', async () => {
+  let called = false;
+  const service = {
+    async registerDocument() {
+      called = true;
+      return { documentId: 'LEGACY-1', status: 'QUARANTINED' };
+    }
+  };
+  await withHttpService(service, async base => {
+    const response = await fetch(`${base}/filings/F-OWN/documents`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({
+        fileName: 'bypass.pdf',
+        mimeType: 'application/pdf',
+        checksumSha256: 'a'.repeat(64)
+      })
+    });
+    assert.equal(response.status, 404);
+    assert.equal(called, false);
+  });
+});
+
 test('legal hold is an unconditional governed-disposition veto', () => {
   const eligible = activeDocument({ status: 'ARCHIVED', legalHold: false, dispositionEligibleAt: '2026-09-01T00:00:00.000Z' });
   assert.equal(isDocumentDispositionEligible(eligible, { at: '2026-09-07T00:00:00.000Z' }), true);
