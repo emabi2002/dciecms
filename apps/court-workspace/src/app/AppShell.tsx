@@ -13,6 +13,7 @@ export function AppShell() {
           <NavLink to="/cases">Cases</NavLink>
           <NavLink to="/judicial/my-cases">My Cases</NavLink>
           <NavLink to="/judicial/daily-hearings">Daily Hearings</NavLink>
+          <NavLink to="/judicial/pending-decisions">Pending Decisions</NavLink>
         </nav>
       </header>
       <main id="main-content">
