@@ -81,3 +81,14 @@ test('reconciliation queue is constrained to actor court scope',async()=>{
   assert.equal(rows.length,1);
   assert.equal(rows[0].reconciliationId,'rec-a');
 });
+
+test('finance read queues reject unknown status values before repository access',async()=>{
+  const repo=new FinanceOperationsRepo();
+  const svc=new FinanceOperationsService({repository:repo});
+  await assert.rejects(()=>svc.listFinanceQueue(fin,{status:'bogus'}),/status/i);
+  await assert.rejects(()=>svc.listReceipts(fin,{status:'bogus'}),/status/i);
+  await assert.rejects(()=>svc.listReconciliations(fin,{status:'bogus'}),/status/i);
+  assert.equal(repo.queueArgs,null);
+  assert.equal(repo.receiptArgs,null);
+  assert.equal(repo.reconciliationArgs,null);
+});
