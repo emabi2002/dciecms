@@ -42,8 +42,15 @@ export type ApiRequest = {
   signal?: AbortSignal;
 };
 
+export type AccessTokenProvider = () => string | undefined | Promise<string | undefined>;
+
 export type ApiClientConfig = Partial<RuntimeConfig> & {
   devIdentity?: DevIdentityConfig;
+  accessTokenProvider?: AccessTokenProvider;
+};
+
+type ResolvedApiClientConfig = RuntimeConfig & {
+  accessTokenProvider?: AccessTokenProvider;
 };
 
 function joinUrl(baseUrl: string, path: string): string {
@@ -60,20 +67,29 @@ function kindForStatus(status: number): ApiErrorKind {
   return 'server';
 }
 
-function resolveConfig(overrides: ApiClientConfig = {}): RuntimeConfig {
+function resolveConfig(overrides: ApiClientConfig = {}): ResolvedApiClientConfig {
   const runtime = getRuntimeConfig();
+  const accessTokenProvider = overrides.accessTokenProvider;
   return {
     baseUrl: overrides.baseUrl ?? runtime.baseUrl,
-    devIdentity: overrides.devIdentity ?? runtime.devIdentity
+    accessTokenProvider,
+    devIdentity: accessTokenProvider
+      ? undefined
+      : (overrides.devIdentity ?? runtime.devIdentity)
   };
 }
 
-function buildHeaders(devIdentity?: DevIdentityConfig): Record<string, string> {
+async function buildHeaders(config: ResolvedApiClientConfig): Promise<Record<string, string>> {
   const headers: Record<string, string> = { 'content-type': 'application/json' };
-  if (devIdentity?.enabled) {
-    headers['x-dev-sub'] = devIdentity.subject;
-    headers['x-dev-roles'] = devIdentity.roles.join(',');
-    headers['x-dev-courts'] = devIdentity.courtIds.join(',');
+  if (config.accessTokenProvider) {
+    const token = await config.accessTokenProvider();
+    if (token?.trim()) headers.authorization = `Bearer ${token.trim()}`;
+    return headers;
+  }
+  if (config.devIdentity?.enabled) {
+    headers['x-dev-sub'] = config.devIdentity.subject;
+    headers['x-dev-roles'] = config.devIdentity.roles.join(',');
+    headers['x-dev-courts'] = config.devIdentity.courtIds.join(',');
   }
   return headers;
 }
@@ -95,7 +111,7 @@ export async function apiRequest<T>(request: ApiRequest, config: ApiClientConfig
   try {
     const response = await fetch(url, {
       method: request.method,
-      headers: buildHeaders(resolved.devIdentity),
+      headers: await buildHeaders(resolved),
       body: request.body === undefined ? undefined : JSON.stringify(request.body),
       signal: request.signal
     });
