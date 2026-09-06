@@ -2,8 +2,12 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   completeHearing,
   createJudgment,
+  getJudicialCase,
+  getJudicialHearing,
+  getJudgment,
   listDailyHearings,
   listMyCases,
+  listPendingDecisions,
   recordAppearance,
   recordProceeding,
   reviewJudgment,
@@ -32,6 +36,22 @@ describe('Judicial Workbench API client', () => {
     vi.stubGlobal('fetch', fetchMock);
     await listDailyHearings('2026-09-07', { baseUrl: '/api' });
     expect(fetchMock.mock.calls[0][0]).toBe('/api/judicial/daily-list?date=2026-09-07');
+  });
+
+  it('loads judicial case, hearing, judgment and pending-decision read models', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({}));
+    vi.stubGlobal('fetch', fetchMock);
+    await getJudicialCase('c-1', { baseUrl: '/api' });
+    await getJudicialHearing('h-1', { baseUrl: '/api' });
+    await getJudgment('j-1', { baseUrl: '/api' });
+    await listPendingDecisions({ baseUrl: '/api' });
+    expect(fetchMock.mock.calls.map(call => call[0])).toEqual([
+      '/api/judicial/cases/c-1',
+      '/api/judicial/hearings/h-1',
+      '/api/judicial/judgments/j-1',
+      '/api/judicial/pending-decisions'
+    ]);
+    expect(fetchMock.mock.calls.every(call => call[1].method === 'GET')).toBe(true);
   });
 
   it('uses dedicated hearing-mode action endpoints', async () => {
