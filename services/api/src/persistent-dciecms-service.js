@@ -80,6 +80,17 @@ class PersistentDciecmsService {
   async submitFiling(actor, filingId, idempotencyKey) {
     if (!idempotencyKey) throw new ValidationError('Idempotency key is required');
     const filing = await this._filingForAccess(actor, filingId, 'filing.submit');
+    if (typeof this.repository.submitFilingIdempotent === 'function') {
+      try {
+        const submitted = await this.repository.submitFilingIdempotent({ filingId, taskId: randomUUID(), actorSubject: actor.userId, submittedAt: new Date().toISOString(), idempotencyKey });
+        this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
+        return submitted;
+      } catch (error) {
+        if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing submission state conflict');
+        if (error.code === 'IDEMPOTENCY_REPLAY_CONFLICT') throw new ConflictError('Filing submission replay is unavailable');
+        throw error;
+      }
+    }
     const key = `${actor.userId}:${filingId}:${idempotencyKey}`;
     if (this.idempotency.has(key)) return this.idempotency.get(key);
     if (filing.status !== 'DRAFT') throw new ConflictError(`Filing cannot be submitted from status ${filing.status}`);
