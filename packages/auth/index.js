@@ -1,3 +1,5 @@
+const { AuthenticationError, AuthenticationUnavailableError } = require('./errors');
+
 function unique(values = []) {
   return [...new Set(values.filter(Boolean))];
 }
@@ -12,4 +14,33 @@ function resolveActorFromClaims(claims = {}) {
   });
 }
 
-module.exports = { resolveActorFromClaims };
+function stringArrayClaim(claims, name) {
+  const value = claims[name];
+  if (value === undefined) return [];
+  if (!Array.isArray(value) || value.some(item => typeof item !== 'string' || !item.trim())) {
+    throw new AuthenticationError();
+  }
+  return value;
+}
+
+function resolveActorFromVerifiedClaims(claims) {
+  if (!claims || typeof claims !== 'object' || Array.isArray(claims)) {
+    throw new AuthenticationError();
+  }
+  if (typeof claims.sub !== 'string' || !claims.sub.trim()) {
+    throw new AuthenticationError();
+  }
+  return resolveActorFromClaims({
+    sub: claims.sub,
+    roles: stringArrayClaim(claims, 'roles'),
+    court_ids: stringArrayClaim(claims, 'court_ids'),
+    explicit_grants: stringArrayClaim(claims, 'explicit_grants')
+  });
+}
+
+module.exports = {
+  resolveActorFromClaims,
+  resolveActorFromVerifiedClaims,
+  AuthenticationError,
+  AuthenticationUnavailableError
+};
