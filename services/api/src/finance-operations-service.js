@@ -6,14 +6,9 @@ const { JudicialWorkbenchService } = require('./judicial-workbench-service');
 class FinanceOperationsService extends JudicialWorkbenchService {
   async listFinanceQueue(actor, filters = {}) {
     authorize(actor, 'finance.payment.view', {});
-    const rows = await this.repository.listFinanceQueue({
-      courtIds: actor.courtIds,
-      status: filters?.status ? String(filters.status).trim().toUpperCase() : null
-    });
-    this._audit(actor, 'finance.queue.view', 'finance_queue', actor.courtIds.join(','), {
-      courtIds: actor.courtIds,
-      status: filters?.status ? String(filters.status).trim().toUpperCase() : null
-    });
+    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const rows = await this.repository.listFinanceQueue({ courtIds: actor.courtIds, status });
+    this._audit(actor, 'finance.queue.view', 'finance_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
     return rows;
   }
 
@@ -33,6 +28,22 @@ class FinanceOperationsService extends JudicialWorkbenchService {
       reconciliationId: reconciliation?.reconciliationId || null
     });
     return Object.freeze({ payment, assessment, receipt, reconciliation });
+  }
+
+  async listReceipts(actor, filters = {}) {
+    authorize(actor, 'finance.receipt.view', {});
+    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const rows = await this.repository.listReceipts({ courtIds: actor.courtIds, status });
+    this._audit(actor, 'finance.receipts.view', 'receipt_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
+    return rows;
+  }
+
+  async listReconciliations(actor, filters = {}) {
+    authorize(actor, 'finance.reconciliation.view', {});
+    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const rows = await this.repository.listReconciliations({ courtIds: actor.courtIds, status });
+    this._audit(actor, 'finance.reconciliations.view', 'reconciliation_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
+    return rows;
   }
 }
 
