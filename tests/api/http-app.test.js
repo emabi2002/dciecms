@@ -125,7 +125,7 @@ test('unknown route returns 404',async()=>withServer(async(base)=>{ const res=aw
 test('HTTP adapter awaits asynchronous actor resolver',async()=>{
   await withResolver(
     async()=>({userId:'u-1',roles:['REG'],courtIds:['COURT-A'],explicitGrants:[]}),
-    {async listRegistryQueue(){return[];}},
+    {async listRegistryQueue(actor){assert.equal(actor.userId,'u-1'); return[];}},
     async base=>assert.equal((await fetch(`${base}/registry/filings`)).status,200)
   );
 });
