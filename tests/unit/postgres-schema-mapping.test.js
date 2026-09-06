@@ -37,6 +37,16 @@ test('mapping is applied to transactional clients returned by connect()', async 
   assert.equal(seen[1].release, true);
 });
 
+test('Supabase test profile maps durable idempotency and audit tables', async () => {
+  const seen = [];
+  const db = { async query(text) { seen.push(text); return { rows: [] }; } };
+  const mapped = createMappedDatabase(db, 'supabase_test');
+  await mapped.query('SELECT * FROM workflow.idempotency_records');
+  await mapped.query('SELECT * FROM audit.audit_events');
+  assert.match(seen[0], /FROM dciecms_test\.workflow_idempotency_records/);
+  assert.match(seen[1], /FROM dciecms_test\.audit_events/);
+});
+
 test('logical profile leaves repository SQL unchanged', async () => {
   let sql;
   const db = { async query(text) { sql = text; return { rows: [] }; } };
