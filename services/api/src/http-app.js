@@ -43,6 +43,9 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/workflow/tasks') {
         return send(res, 200, await service.listWorkflowTasks(actor, { includeCompleted: url.searchParams.get('includeCompleted') === 'true' }));
       }
+      if (req.method === 'GET' && path === '/judicial/my-cases') {
+        return send(res, 200, await service.listMyCases(actor));
+      }
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) {
@@ -110,6 +113,10 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && openCasePost) {
         const body = await readJson(req);
         return send(res, 201, await service.openCase(actor, openCasePost[1], body.paymentId));
+      }
+      const assignCasePost = path.match(/^\/cases\/([^/]+)\/assign$/);
+      if (req.method === 'POST' && assignCasePost) {
+        return send(res, 200, await service.assignCase(actor, assignCasePost[1], await readJson(req)));
       }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
