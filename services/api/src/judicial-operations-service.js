@@ -1,5 +1,6 @@
 'use strict';
-const { authorize } = require('../../../packages/rbac');
+const { randomUUID } = require('node:crypto');
+const { authorize, AccessDeniedError } = require('../../../packages/rbac');
 const { ConflictError, NotFoundError, ValidationError } = require('./dciecms-service');
 const { PersistentDciecmsService } = require('./persistent-dciecms-service');
 
@@ -47,6 +48,85 @@ class JudicialOperationsService extends PersistentDciecmsService {
     this._audit(actor, 'judicial.my_cases.view', 'case_queue', actor.userId, {
       courtIds: actor.courtIds
     });
+    return rows;
+  }
+
+  _requireJudicialCaseAccess(actor, courtCase, permission) {
+    authorize(actor, permission, { courtId: courtCase.courtId });
+    if (actor.roles.includes('MAG') && !actor.roles.includes('CMAG') && courtCase.assignedToSubject !== actor.userId) {
+      throw new AccessDeniedError('Case is not assigned to this magistrate');
+    }
+  }
+
+  async scheduleHearing(actor, caseId, input) {
+    const courtCase = await this.repository.getCase(caseId);
+    if (!courtCase) throw new NotFoundError('Case not found');
+    this._requireJudicialCaseAccess(actor, courtCase, 'hearing.schedule');
+    if (!['ASSIGNED', 'HEARING_SCHEDULED'].includes(courtCase.status)) {
+      throw new ConflictError(`Case cannot schedule a hearing from status ${courtCase.status}`);
+    }
+
+    const hearingType = String(input?.hearingType || '').trim().toUpperCase();
+    const scheduledStart = String(input?.scheduledStart || '').trim();
+    const scheduledEnd = String(input?.scheduledEnd || '').trim();
+    if (!hearingType || !scheduledStart || !scheduledEnd) throw new ValidationError('hearingType, scheduledStart and scheduledEnd are required');
+    const startMs = Date.parse(scheduledStart);
+    const endMs = Date.parse(scheduledEnd);
+    if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new ValidationError('Hearing schedule is invalid');
+
+    const hearing = await this.repository.createHearing({
+      hearingId: randomUUID(),
+      caseId,
+      courtId: courtCase.courtId,
+      hearingType,
+      scheduledStart: new Date(startMs).toISOString(),
+      scheduledEnd: new Date(endMs).toISOString(),
+      courtroom: input?.courtroom ? String(input.courtroom).trim() : null,
+      actorSubject: actor.userId,
+      createdAt: new Date().toISOString()
+    });
+    this._audit(actor, 'hearing.schedule', 'hearing', hearing.hearingId, { courtId: courtCase.courtId, caseId });
+    return hearing;
+  }
+
+  async adjournHearing(actor, hearingId, input) {
+    const hearing = await this.repository.getHearing(hearingId);
+    if (!hearing) throw new NotFoundError('Hearing not found');
+    const courtCase = await this.repository.getCase(hearing.caseId);
+    if (!courtCase) throw new NotFoundError('Case not found');
+    this._requireJudicialCaseAccess(actor, courtCase, 'hearing.adjourn');
+
+    const reason = String(input?.reason || '').trim();
+    if (!reason) throw new ValidationError('Adjournment reason is required');
+    const nextStart = input?.nextStart ? new Date(Date.parse(input.nextStart)).toISOString() : null;
+    const nextEnd = input?.nextEnd ? new Date(Date.parse(input.nextEnd)).toISOString() : null;
+    if ((nextStart && !nextEnd) || (!nextStart && nextEnd) || (nextStart && Date.parse(nextEnd) <= Date.parse(nextStart))) {
+      throw new ValidationError('Next hearing schedule is invalid');
+    }
+
+    try {
+      const adjourned = await this.repository.adjournHearing({
+        hearingId,
+        reason,
+        nextStart,
+        nextEnd,
+        actorSubject: actor.userId,
+        at: new Date().toISOString()
+      });
+      this._audit(actor, 'hearing.adjourn', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId, reason });
+      return adjourned;
+    } catch (error) {
+      if (error.code === 'HEARING_STATE_CONFLICT') throw new ConflictError('Hearing state conflict');
+      throw error;
+    }
+  }
+
+  async listDailyHearings(actor, input) {
+    authorize(actor, 'hearing.view', {});
+    const date = String(input?.date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new ValidationError('date must be YYYY-MM-DD');
+    const rows = await this.repository.listDailyHearings({ courtIds: actor.courtIds, date });
+    this._audit(actor, 'hearing.daily_list.view', 'hearing_queue', date, { courtIds: actor.courtIds });
     return rows;
   }
 }
