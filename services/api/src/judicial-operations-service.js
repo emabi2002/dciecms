@@ -91,7 +91,7 @@ class JudicialOperationsService extends PersistentDciecmsService {
       await this._audit(actor, 'hearing.adjourn', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId, reason });
       await this._emitDomainEvent(actor, 'hearing.adjourned', 'hearing', hearingId, {
         courtId: hearing.courtId,
-        payload: { hearingId, caseId: hearing.caseId, courtId: hearing.courtId, status: adjourned.status, reason, nextStart, nextEnd }
+        payload: { hearingId, caseId: hearing.caseId, courtId: hearing.courtId, status: adjourned.status, nextStart, nextEnd }
       });
       return adjourned;
     } catch (error) { return this._stateConflict(error, 'HEARING_STATE_CONFLICT', 'Hearing state conflict'); }
