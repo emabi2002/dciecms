@@ -106,6 +106,26 @@ function secureDocumentPoolFixture({ failAudit = false, failScanInsert = false, 
           if (/SELECT[\s\S]+FROM documents\.documents WHERE document_id=\$1/i.test(text)) {
             return { rows: [{ ...baseDocument }] };
           }
+          if (/SELECT[\s\S]+FROM registry\.filings WHERE filing_id = \$1/i.test(text)) {
+            return {
+              rows: [{
+                filing_id: 'F-1',
+                filing_reference: 'F-1',
+                court_id: COURT_A,
+                case_type_code: 'CIV',
+                filer_party_id: null,
+                status: 'DRAFT',
+                created_by: 'reg-a',
+                created_at: '2026-09-07T00:00:00.000Z',
+                submitted_at: null,
+                validated_at: null,
+                validated_by_subject: null,
+                decision_reason: null,
+                decision_by_subject: null,
+                decision_at: null
+              }]
+            };
+          }
           if (/UPDATE documents\.documents[\s\S]+SET classification=\$2/i.test(text)) {
             return { rows: [{ ...baseDocument, classification: params[1] }] };
           }
