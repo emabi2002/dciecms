@@ -7,6 +7,7 @@ import { PaymentsPage } from '../pages/PaymentsPage';
 import { CasesPage } from '../pages/CasesPage';
 import { MyCasesPage } from '../pages/MyCasesPage';
 import { DailyHearingsPage } from '../pages/DailyHearingsPage';
+import { PendingDecisionsPage } from '../pages/PendingDecisionsPage';
 import { CaseWorkspacePage } from '../pages/CaseWorkspacePage';
 import { HearingModePage } from '../pages/HearingModePage';
 import { NotFoundPage } from '../pages/NotFoundPage';
@@ -25,6 +26,7 @@ export const router = createBrowserRouter([
       { path: 'hearings/:hearingId', element: <HearingModePage /> },
       { path: 'judicial/my-cases', element: <MyCasesPage /> },
       { path: 'judicial/daily-hearings', element: <DailyHearingsPage /> },
+      { path: 'judicial/pending-decisions', element: <PendingDecisionsPage /> },
       { path: '*', element: <NotFoundPage /> }
     ]
   }
