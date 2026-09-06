@@ -32,7 +32,7 @@
 
 - `packages/auth/errors.js` — authentication-domain error types shared by verifier and HTTP adapter.
 - `services/api/src/auth-config.js` — strict environment parsing and authentication-mode configuration.
-- `services/api/src/oidc-actor-resolver.js` — bearer extraction, remote JWKS construction, JWT verification, safe error classification, verified-claim actor mapping.
+- `services/api/src/oidc-actor-resolver.js` — bearer extraction, JWKS transport, JWT verification, safe error classification, verified-claim actor mapping.
 - `services/api/src/auth-runtime.js` — selects development vs OIDC resolver and enforces the production boundary.
 - `tests/security/production-authentication.test.js` — cryptographic token/JWKS security regression suite.
 - `tests/unit/auth-config.test.js` — fail-closed configuration and mode-selection tests.
@@ -46,7 +46,7 @@
 - `tests/api/http-app.test.js` — 401/403/503 and async-resolver integration tests.
 - `package.json` — add `jose` 6.x backend dependency.
 - `apps/court-workspace/src/api/client.ts` — injected bearer-token provider and no dev fallback.
-- `apps/court-workspace/src/api/client.test.ts` — bearer header, mutual exclusion, no-fallback tests.
+- `apps/court-workspace/src/api/client.test.ts` — bearer header and no-fallback tests.
 - `.env.example` — explicit development/OIDC authentication settings without real credentials.
 - `docs/runbooks/LOCAL_DEVELOPMENT.md` — explicit development-mode startup instructions.
 - `README.md` — production authentication boundary status and non-goals.
@@ -67,7 +67,7 @@
 
 - [ ] **Step 1: Add RED tests for verified claim shapes**
 
-Append tests equivalent to:
+Append:
 
 ```js
 const {
@@ -112,8 +112,6 @@ test('verified claims preserve canonical actor normalization', () => {
 
 - [ ] **Step 2: Run the targeted test and verify RED**
 
-Run:
-
 ```bash
 node --test tests/unit/auth-rbac.test.js
 ```
@@ -146,7 +144,7 @@ module.exports = { AuthenticationError, AuthenticationUnavailableError };
 
 - [ ] **Step 4: Add strict verified-claim validation before actor normalization**
 
-Modify `packages/auth/index.js` so `resolveActorFromClaims()` remains backward-compatible for existing trusted development/test callers, while the new production path is strict:
+Modify `packages/auth/index.js`:
 
 ```js
 const { AuthenticationError, AuthenticationUnavailableError } = require('./errors');
@@ -216,7 +214,6 @@ git commit -m "feat: validate verified authentication claims"
 - Create: `services/api/src/auth-config.js`
 - Create: `services/api/src/auth-runtime.js`
 - Create/Test: `tests/unit/auth-config.test.js`
-- Modify: `services/api/src/server.js` only after the runtime factory is GREEN.
 
 **Interfaces:**
 - Produces: `loadAuthenticationConfig(env)` returning `{ mode: 'development' }` or `{ mode: 'oidc', issuer, audience, jwksUri, algorithms }`.
@@ -225,7 +222,7 @@ git commit -m "feat: validate verified authentication claims"
 
 - [ ] **Step 1: Write RED configuration tests**
 
-Create `tests/unit/auth-config.test.js` with explicit cases:
+Create `tests/unit/auth-config.test.js`:
 
 ```js
 'use strict';
@@ -281,12 +278,24 @@ test('oidc mode rejects symmetric and none algorithms', () => {
   );
 });
 
-test('valid oidc configuration is normalized', () => {
-  assert.deepEqual(loadAuthenticationConfig(oidcEnv), {
+test('production oidc URLs must use https', () => {
+  assert.throws(
+    () => loadAuthenticationConfig({ ...oidcEnv, DCIECMS_OIDC_JWKS_URI: 'http://identity.example.test/jwks' }),
+    /https/i
+  );
+});
+
+test('valid oidc configuration preserves exact issuer and jwks strings', () => {
+  const env = {
+    ...oidcEnv,
+    DCIECMS_OIDC_ISSUER: 'https://identity.example.test/tenant/',
+    DCIECMS_OIDC_JWKS_URI: 'https://identity.example.test/tenant/jwks/'
+  };
+  assert.deepEqual(loadAuthenticationConfig(env), {
     mode: 'oidc',
-    issuer: 'https://identity.example.test',
+    issuer: 'https://identity.example.test/tenant/',
     audience: 'dciecms-api',
-    jwksUri: 'https://identity.example.test/.well-known/jwks.json',
+    jwksUri: 'https://identity.example.test/tenant/jwks/',
     algorithms: ['RS256', 'ES256']
   });
 });
@@ -302,7 +311,7 @@ Expected: FAIL because `auth-config.js` does not exist.
 
 - [ ] **Step 3: Implement strict configuration parsing**
 
-Create `services/api/src/auth-config.js` with a fixed asymmetric allow-set:
+Create `services/api/src/auth-config.js`:
 
 ```js
 'use strict';
@@ -325,7 +334,7 @@ function absoluteHttpUrl(value, name, production) {
   try { parsed = new URL(value); } catch { throw new Error(`${name} must be an absolute URL`); }
   if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`${name} must use http or https`);
   if (production && parsed.protocol !== 'https:') throw new Error(`${name} must use https in production`);
-  return parsed.toString().replace(/\/$/, '');
+  return value;
 }
 
 function loadAuthenticationConfig(env = process.env) {
@@ -357,8 +366,6 @@ function loadAuthenticationConfig(env = process.env) {
 module.exports = { loadAuthenticationConfig };
 ```
 
-If stripping a trailing `/` from the issuer changes the exact issuer required by the selected IdP, remove that normalization and preserve the configured issuer byte-for-byte. The test and implementation must agree; do not silently normalize an issuer in a way that weakens exact issuer matching.
-
 - [ ] **Step 4: Run configuration tests GREEN**
 
 ```bash
@@ -367,9 +374,9 @@ node --test tests/unit/auth-config.test.js
 
 Expected: PASS.
 
-- [ ] **Step 5: Add runtime-selection RED tests**
+- [ ] **Step 5: Add runtime-selection RED tests to `tests/unit/auth-config.test.js`**
 
-Extend the same test file or create a focused adjacent block:
+Append:
 
 ```js
 const { createAuthenticationResolver } = require('../../services/api/src/auth-runtime');
@@ -395,9 +402,26 @@ test('runtime constructs oidc resolver from oidc configuration', async () => {
   assert.equal(received.mode, 'oidc');
   assert.equal(resolver({ headers: {} }).userId, 'verified');
 });
+
+test('runtime does not fall back when oidc resolver construction fails', async () => {
+  await assert.rejects(
+    () => createAuthenticationResolver(oidcEnv, {
+      createOidcActorResolver: async () => { throw new Error('verifier construction failed'); }
+    }),
+    /verifier construction failed/
+  );
+});
 ```
 
-- [ ] **Step 6: Implement runtime selection**
+- [ ] **Step 6: Verify runtime tests are RED**
+
+```bash
+node --test tests/unit/auth-config.test.js
+```
+
+Expected: FAIL because `auth-runtime.js` does not exist.
+
+- [ ] **Step 7: Implement runtime selection**
 
 Create `services/api/src/auth-runtime.js`:
 
@@ -431,7 +455,7 @@ async function createAuthenticationResolver(env = process.env, dependencies = {}
 module.exports = { developmentActorResolver, createAuthenticationResolver };
 ```
 
-- [ ] **Step 7: Run targeted tests and commit Task 2**
+- [ ] **Step 8: Run Task 2 tests GREEN and commit**
 
 ```bash
 node --test tests/unit/auth-config.test.js tests/unit/auth-rbac.test.js
@@ -451,11 +475,11 @@ git commit -m "feat: add fail-closed authentication runtime config"
 **Interfaces:**
 - Consumes: `{ mode:'oidc', issuer, audience, jwksUri, algorithms }` from Task 2.
 - Consumes: `resolveActorFromVerifiedClaims`, `AuthenticationError`, `AuthenticationUnavailableError` from Task 1.
-- Produces: async `createOidcActorResolver(config, dependencies = {})` returning `async function oidcActorResolver(req)`.
+- Produces: `createJwksFetch(fetchImpl)` and async `createOidcActorResolver(config, dependencies = {})` returning `async function oidcActorResolver(req)`.
 
 - [ ] **Step 1: Add `jose` dependency**
 
-Update root `package.json` dependencies to include the current 6.x release used by this workstream:
+Update root `package.json`:
 
 ```json
 "dependencies": {
@@ -464,18 +488,24 @@ Update root `package.json` dependencies to include the current 6.x release used 
 }
 ```
 
-Do not convert the CommonJS backend to ESM. Load `jose` with dynamic `import('jose')`, which keeps Node 20 CI compatible without changing package module type.
+Keep the backend CommonJS. Load `jose` with dynamic `import('jose')`.
 
-- [ ] **Step 2: Write cryptographic RED test helpers**
+- [ ] **Step 2: Create RED cryptographic test fixture**
 
-Create `tests/security/production-authentication.test.js` beginning with:
+Create `tests/security/production-authentication.test.js`:
 
 ```js
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { AuthenticationError, AuthenticationUnavailableError } = require('../../packages/auth');
-const { createOidcActorResolver } = require('../../services/api/src/oidc-actor-resolver');
+const {
+  AuthenticationError,
+  AuthenticationUnavailableError
+} = require('../../packages/auth');
+const {
+  createJwksFetch,
+  createOidcActorResolver
+} = require('../../services/api/src/oidc-actor-resolver');
 
 const CONFIG = Object.freeze({
   mode: 'oidc',
@@ -505,7 +535,7 @@ async function fixture() {
     return jwt.sign(options.privateKey || privateKey);
   }
 
-  return { jose, resolver, sign, privateKey };
+  return { jose, resolver, sign };
 }
 
 const requestWith = (token, extra = {}) => ({
@@ -513,7 +543,9 @@ const requestWith = (token, extra = {}) => ({
 });
 ```
 
-- [ ] **Step 3: Add RED happy-path and claim-mapping tests**
+- [ ] **Step 3: Add RED happy-path and dev-header isolation tests**
+
+Append:
 
 ```js
 test('valid bearer token maps only verified claims into actor', async () => {
@@ -535,7 +567,7 @@ test('valid bearer token maps only verified claims into actor', async () => {
   });
 });
 
-test('oidc resolver requires one bearer credential and ignores dev identity', async () => {
+test('oidc resolver requires bearer credentials and never accepts dev identity', async () => {
   const { resolver } = await fixture();
   await assert.rejects(() => resolver({ headers: { 'x-dev-sub': 'reg-a' } }), AuthenticationError);
   await assert.rejects(() => resolver({ headers: { authorization: 'Basic abc' } }), AuthenticationError);
@@ -543,12 +575,12 @@ test('oidc resolver requires one bearer credential and ignores dev identity', as
 });
 ```
 
-- [ ] **Step 4: Add table-driven RED invalid-token tests**
+- [ ] **Step 4: Add RED invalid issuer/audience/time/claim tests**
 
-Use actual signed JWTs for issuer/audience/time/subject/claim cases:
+Append:
 
 ```js
-test('invalid issuer, audience, expiry, nbf, subject, and claim shapes are rejected', async () => {
+test('issuer audience time subject and claim-shape failures are rejected', async () => {
   const { resolver, sign } = await fixture();
   const tokens = [
     await sign({}, { issuer: 'https://evil.example.test' }),
@@ -566,9 +598,36 @@ test('invalid issuer, audience, expiry, nbf, subject, and claim shapes are rejec
 });
 ```
 
-Add a separate invalid-signature test with a second RSA private key using the same `kid`, and a disallowed algorithm test signed with `HS256` against `CONFIG.algorithms=['RS256']`. Both must reject with `AuthenticationError`.
+- [ ] **Step 5: Add exact RED invalid-signature and disallowed-algorithm tests**
 
-- [ ] **Step 5: Add RED JWKS-unavailable classification test**
+Append:
+
+```js
+test('invalid signature is rejected', async () => {
+  const { jose, resolver, sign } = await fixture();
+  const { privateKey: otherPrivateKey } = await jose.generateKeyPair('RS256');
+  const token = await sign({}, { privateKey: otherPrivateKey });
+  await assert.rejects(() => resolver(requestWith(token)), AuthenticationError);
+});
+
+test('disallowed signing algorithm is rejected before authorization claims are used', async () => {
+  const { jose, resolver } = await fixture();
+  const secret = new TextEncoder().encode('0123456789abcdef0123456789abcdef');
+  const token = await new jose.SignJWT({ roles: ['REG'], court_ids: ['COURT-A'] })
+    .setProtectedHeader({ alg: 'HS256', kid: 'symmetric-key' })
+    .setIssuer(CONFIG.issuer)
+    .setAudience(CONFIG.audience)
+    .setSubject('u-1')
+    .setIssuedAt()
+    .setExpirationTime('5m')
+    .sign(secret);
+  await assert.rejects(() => resolver(requestWith(token)), AuthenticationError);
+});
+```
+
+- [ ] **Step 6: Add RED JWKS infrastructure tests**
+
+Append:
 
 ```js
 test('JWKS timeout fails closed as authentication unavailable', async () => {
@@ -590,9 +649,61 @@ test('JWKS timeout fails closed as authentication unavailable', async () => {
   const resolver = await createOidcActorResolver(CONFIG, { joseModule: jose, keyResolver: timeoutResolver });
   await assert.rejects(() => resolver(requestWith(token)), AuthenticationUnavailableError);
 });
+
+test('JWKS transport converts network and non-2xx failures to authentication unavailable', async () => {
+  const options = {
+    headers: new Headers(),
+    method: 'GET',
+    redirect: 'manual',
+    signal: new AbortController().signal
+  };
+  const networkFetch = createJwksFetch(async () => { throw new Error('ECONNRESET internal detail'); });
+  await assert.rejects(() => networkFetch(CONFIG.jwksUri, options), AuthenticationUnavailableError);
+
+  const httpFetch = createJwksFetch(async () => new Response('down', { status: 503 }));
+  await assert.rejects(() => httpFetch(CONFIG.jwksUri, options), AuthenticationUnavailableError);
+});
 ```
 
-- [ ] **Step 6: Run the security suite and verify RED**
+- [ ] **Step 7: Add RED one-resolver-per-process cache configuration test**
+
+Append:
+
+```js
+test('remote JWKS resolver is constructed once with bounded cache settings', async () => {
+  const customFetch = Symbol('customFetch');
+  let createCalls = 0;
+  let seenOptions;
+  class FakeJoseError extends Error {}
+  const joseModule = {
+    customFetch,
+    errors: { JOSEError: FakeJoseError },
+    createRemoteJWKSet(_url, options) {
+      createCalls += 1;
+      seenOptions = options;
+      return Symbol('remote-jwks');
+    },
+    async jwtVerify() {
+      return { payload: { sub:'u-1', roles:['REG'], court_ids:['COURT-A'], explicit_grants:[] } };
+    }
+  };
+
+  const resolver = await createOidcActorResolver(CONFIG, {
+    joseModule,
+    fetchImpl: async () => new Response('{"keys":[]}', { status: 200 })
+  });
+  await resolver(requestWith('token-one'));
+  await resolver(requestWith('token-two'));
+
+  assert.equal(createCalls, 1);
+  assert.equal(seenOptions.cacheMaxAge, 600_000);
+  assert.equal(seenOptions.cooldownDuration, 30_000);
+  assert.equal(seenOptions.timeoutDuration, 5_000);
+  assert.equal(typeof seenOptions[customFetch], 'function');
+});
+```
+
+- [ ] **Step 8: Run security tests and verify RED**
 
 ```bash
 node --test tests/security/production-authentication.test.js
@@ -600,9 +711,9 @@ node --test tests/security/production-authentication.test.js
 
 Expected: FAIL because `oidc-actor-resolver.js` does not exist.
 
-- [ ] **Step 7: Implement the OIDC actor resolver**
+- [ ] **Step 9: Implement the OIDC/JWKS actor resolver**
 
-Create `services/api/src/oidc-actor-resolver.js` with these exact responsibilities:
+Create `services/api/src/oidc-actor-resolver.js`:
 
 ```js
 'use strict';
@@ -618,6 +729,20 @@ function bearerToken(req) {
   const match = /^Bearer\s+([^\s]+)$/i.exec(header.trim());
   if (!match) throw new AuthenticationError();
   return match[1];
+}
+
+function createJwksFetch(fetchImpl = globalThis.fetch) {
+  if (typeof fetchImpl !== 'function') throw new Error('JWKS fetch implementation is required');
+  return async function jwksFetch(url, options) {
+    try {
+      const response = await fetchImpl(url, options);
+      if (!response.ok) throw new AuthenticationUnavailableError();
+      return response;
+    } catch (error) {
+      if (error instanceof AuthenticationUnavailableError) throw error;
+      throw new AuthenticationUnavailableError();
+    }
+  };
 }
 
 function isVerificationError(error, jose) {
@@ -637,7 +762,8 @@ async function createOidcActorResolver(config, dependencies = {}) {
     {
       cacheMaxAge: 600_000,
       cooldownDuration: 30_000,
-      timeoutDuration: 5_000
+      timeoutDuration: 5_000,
+      [jose.customFetch]: createJwksFetch(dependencies.fetchImpl || globalThis.fetch)
     }
   );
 
@@ -652,24 +778,20 @@ async function createOidcActorResolver(config, dependencies = {}) {
       return resolveActorFromVerifiedClaims(payload);
     } catch (error) {
       if (error instanceof AuthenticationError) throw error;
+      if (error instanceof AuthenticationUnavailableError) throw error;
       if (error?.code === 'ERR_JWKS_TIMEOUT') throw new AuthenticationUnavailableError();
-      if (error instanceof TypeError) throw new AuthenticationUnavailableError();
       if (isVerificationError(error, jose)) throw new AuthenticationError();
       throw error;
     }
   };
 }
 
-module.exports = { createOidcActorResolver };
+module.exports = { createJwksFetch, createOidcActorResolver };
 ```
 
-During implementation, strengthen remote-JWKS network classification if `jose` surfaces non-timeout fetch failures as a stable distinguishable error. Do not classify `ERR_JWKS_NO_MATCHING_KEY` as infrastructure unavailable; an unknown/non-matching key for a presented token is an invalid credential and must remain 401.
+`ERR_JWKS_NO_MATCHING_KEY` stays inside the verification-error path and therefore returns 401, not 503. The configured JWKS URL is the only remote key source; no token/header value can change it.
 
-- [ ] **Step 8: Add one resolver-construction/caching test**
-
-Use a fake `joseModule` to assert `createRemoteJWKSet()` is called exactly once when the resolver is created and not once per request. Verify options are `cacheMaxAge:600000`, `cooldownDuration:30000`, `timeoutDuration:5000`.
-
-- [ ] **Step 9: Run security + auth unit tests GREEN and commit Task 3**
+- [ ] **Step 10: Run security + auth unit tests GREEN and commit Task 3**
 
 ```bash
 node --test tests/security/production-authentication.test.js tests/unit/auth-rbac.test.js tests/unit/auth-config.test.js
@@ -690,9 +812,9 @@ git commit -m "feat: verify oidc bearer tokens with jwks"
 - Consumes: `AuthenticationError`, `AuthenticationUnavailableError`.
 - Produces: 401 + `WWW-Authenticate: Bearer`, 503 for authentication infrastructure unavailability, existing 403 for authorization denial, generic 500 otherwise.
 
-- [ ] **Step 1: Add RED async-resolver and authentication-error tests**
+- [ ] **Step 1: Add RED async-resolver and authentication-error test helper**
 
-Add tests using `createHttpApp()` with small service stubs:
+Append near the existing HTTP test helpers:
 
 ```js
 const { AuthenticationError, AuthenticationUnavailableError } = require('../../packages/auth');
@@ -704,7 +826,13 @@ async function withResolver(resolver, service, fn) {
   try { return await fn(base); }
   finally { await new Promise(resolve => server.close(resolve)); }
 }
+```
 
+- [ ] **Step 2: Add exact RED HTTP authentication tests**
+
+Append:
+
+```js
 test('HTTP adapter awaits asynchronous actor resolver', async () => {
   await withResolver(
     async () => ({ userId:'u-1', roles:['REG'], courtIds:['COURT-A'], explicitGrants:[] }),
@@ -739,17 +867,17 @@ test('authentication infrastructure failure returns sanitized 503', async () => 
 });
 ```
 
-- [ ] **Step 2: Verify RED**
+- [ ] **Step 3: Verify RED**
 
 ```bash
 node --test tests/api/http-app.test.js
 ```
 
-Expected: async resolver is treated as a truthy Promise and authentication error classes fall through to 500.
+Expected: authentication error classes currently fall through to 500 and the resolver is not awaited.
 
-- [ ] **Step 3: Update `send()` and `mapError()` without leaking details**
+- [ ] **Step 4: Update `send()` and `mapError()`**
 
-Modify the top of `http-app.js`:
+Modify the top of `services/api/src/http-app.js`:
 
 ```js
 const {
@@ -782,9 +910,9 @@ function mapError(error, res) {
 }
 ```
 
-- [ ] **Step 4: Await the resolver**
+- [ ] **Step 5: Await the resolver and challenge missing development actors consistently**
 
-Change only the authentication call inside the handler:
+Change the authentication call inside the handler:
 
 ```js
 const actor = await actorResolver(req);
@@ -793,19 +921,12 @@ if (!actor) {
 }
 ```
 
-Do not move authorization into the HTTP adapter; service/RBAC 403 behavior remains unchanged.
+Do not move authorization into the HTTP adapter.
 
-- [ ] **Step 5: Verify HTTP tests GREEN, including existing 403 regression**
+- [ ] **Step 6: Verify HTTP tests GREEN and commit**
 
 ```bash
 node --test tests/api/http-app.test.js
-```
-
-Expected: all existing route tests plus new auth tests PASS.
-
-- [ ] **Step 6: Commit Task 4**
-
-```bash
 git add services/api/src/http-app.js tests/api/http-app.test.js
 git commit -m "feat: enforce async http authentication boundary"
 ```
@@ -816,30 +937,13 @@ git commit -m "feat: enforce async http authentication boundary"
 
 **Files:**
 - Modify: `services/api/src/server.js`
-- Modify/Test: `tests/unit/auth-config.test.js`
+- Test: `tests/unit/auth-config.test.js` runtime-construction tests from Task 2.
 
 **Interfaces:**
 - Consumes: `createAuthenticationResolver(process.env)` from Task 2.
-- Produces: startup abort before `listen()` when auth configuration is invalid.
+- Produces: startup abort before `listen()` when auth configuration or resolver construction is invalid.
 
-- [ ] **Step 1: Add a RED runtime-factory test for OIDC construction failure**
-
-Add a test that supplies valid OIDC env and a factory that rejects:
-
-```js
-test('runtime does not fall back when oidc resolver construction fails', async () => {
-  await assert.rejects(
-    () => createAuthenticationResolver(oidcEnv, {
-      createOidcActorResolver: async () => { throw new Error('verifier construction failed'); }
-    }),
-    /verifier construction failed/
-  );
-});
-```
-
-This locks in fail-closed behavior before changing `server.js`.
-
-- [ ] **Step 2: Refactor `server.js` to construct authentication before listening**
+- [ ] **Step 1: Refactor `server.js` to construct authentication before listening**
 
 Replace the inline development resolver with:
 
@@ -875,20 +979,20 @@ if (require.main === module) {
 module.exports = { startServer };
 ```
 
-Do not log the issuer, audience, JWKS URI, token, or raw claims at startup.
+Do not log issuer, audience, JWKS URI, token, key data, or raw claims.
 
-- [ ] **Step 3: Re-run unit/API/security tests**
+- [ ] **Step 2: Run authentication/runtime/API/security suites**
 
 ```bash
 node --test tests/unit/auth-config.test.js tests/api/http-app.test.js tests/security/production-authentication.test.js
 ```
 
-Expected: PASS.
+Expected: PASS. The existing runtime-factory rejection test proves there is no fallback if OIDC resolver construction fails.
 
-- [ ] **Step 4: Commit Task 5**
+- [ ] **Step 3: Commit Task 5**
 
 ```bash
-git add services/api/src/server.js tests/unit/auth-config.test.js
+git add services/api/src/server.js
 git commit -m "feat: select authentication mode before server startup"
 ```
 
@@ -950,11 +1054,11 @@ it('does not fall back to development identity when a token provider returns no 
 npm --prefix apps/court-workspace test -- --run src/api/client.test.ts
 ```
 
-Expected: FAIL because `accessTokenProvider` is not part of `ApiClientConfig` and headers are synchronous/dev-only.
+Expected: FAIL because `accessTokenProvider` is not part of `ApiClientConfig`.
 
 - [ ] **Step 3: Add token-provider types and async header construction**
 
-Modify `client.ts`:
+Modify `apps/court-workspace/src/api/client.ts`:
 
 ```ts
 export type AccessTokenProvider = () => string | undefined | Promise<string | undefined>;
@@ -996,13 +1100,13 @@ async function buildHeaders(config: ResolvedApiClientConfig): Promise<Record<str
 }
 ```
 
-Then change the fetch initialization to:
+Change fetch initialization from `headers: buildHeaders(...)` to:
 
 ```ts
 headers: await buildHeaders(resolved),
 ```
 
-The client must not decode the JWT or derive roles/court scope from it.
+The frontend must not decode JWT claims or make RBAC/court-scope authorization decisions.
 
 - [ ] **Step 4: Verify frontend tests and build GREEN**
 
@@ -1029,11 +1133,11 @@ git commit -m "feat: add court workspace bearer token boundary"
 - Modify/Test: `tests/api/http-app.test.js`
 
 **Interfaces:**
-- Verifies architecture rather than adding a new production interface.
+- Adds no runtime API; verifies the trust boundary cannot leak bearer material or collapse 403 into 401.
 
-- [ ] **Step 1: Add a test proving bearer material never reaches the service actor**
+- [ ] **Step 1: Add raw-token non-propagation test**
 
-Use a valid signed token containing a unique sentinel and a fake service that captures only the resolved actor:
+Append to `tests/security/production-authentication.test.js`:
 
 ```js
 test('raw bearer token is not passed into the application actor', async () => {
@@ -1045,25 +1149,42 @@ test('raw bearer token is not passed into the application actor', async () => {
 });
 ```
 
-- [ ] **Step 2: Add a sanitized-error regression**
+- [ ] **Step 2: Add exact sanitized-error regression**
 
-Construct an invalid token string containing `TOKEN_SENTINEL_DO_NOT_LEAK`, send it through `createHttpApp()` with the OIDC resolver, and assert the serialized 401 body and response headers do not contain that sentinel or verifier exception text.
-
-Use an assertion equivalent to:
+Append to `tests/api/http-app.test.js`:
 
 ```js
-assert.equal(JSON.stringify(body).includes('TOKEN_SENTINEL_DO_NOT_LEAK'), false);
-assert.equal(response.headers.get('www-authenticate'), 'Bearer');
+test('authentication error response never echoes bearer material or verifier detail', async () => {
+  const sentinel = 'TOKEN_SENTINEL_DO_NOT_LEAK';
+  await withResolver(
+    async req => {
+      throw new AuthenticationError(`invalid ${req.headers.authorization} verifier-internal-detail`);
+    },
+    {},
+    async base => {
+      const response = await fetch(`${base}/registry/filings`, {
+        headers: { authorization: `Bearer ${sentinel}` }
+      });
+      const text = await response.text();
+      assert.equal(response.status, 401);
+      assert.equal(response.headers.get('www-authenticate'), 'Bearer');
+      assert.equal(text.includes(sentinel), false);
+      assert.equal(text.includes('verifier-internal-detail'), false);
+    }
+  );
+});
 ```
 
-- [ ] **Step 3: Reassert 403 remains authorization, not authentication**
+- [ ] **Step 3: Tighten existing 403 regression**
 
-Keep the existing ICT-admin registry test and add `WWW-Authenticate` absence:
+In the existing ICT-admin registry test add:
 
 ```js
 assert.equal(res.status, 403);
 assert.equal(res.headers.get('www-authenticate'), null);
 ```
+
+This verifies a valid identity denied by RBAC remains an authorization response.
 
 - [ ] **Step 4: Run security/API suites GREEN and commit**
 
@@ -1085,11 +1206,11 @@ git commit -m "test: harden authentication boundary regressions"
 - Modify: `docs/architecture/IMPLEMENTATION_STATUS.md`
 
 **Interfaces:**
-- No runtime interface changes; documents the exact configuration contract already tested in Tasks 2-5.
+- Documents the configuration contract already enforced by Tasks 2-5.
 
-- [ ] **Step 1: Update `.env.example` with explicit non-secret auth configuration**
+- [ ] **Step 1: Update `.env.example`**
 
-Use this shape and keep production placeholders commented:
+Retain the existing database example and add:
 
 ```dotenv
 # Development API
@@ -1105,21 +1226,25 @@ DCIECMS_AUTH_MODE=development
 # DCIECMS_OIDC_ALLOWED_ALGS=RS256
 ```
 
-Retain the existing `DATABASE_URL` development example and credential warning.
+- [ ] **Step 2: Update local-development startup instructions**
 
-- [ ] **Step 2: Update local development startup command**
-
-Replace the old implicit dev-auth start command with:
+Replace the old start command with:
 
 ```bash
 DCIECMS_AUTH_MODE=development PORT=3000 npm start
 ```
 
-State explicitly that `x-dev-*` headers work only in this mode, and that `NODE_ENV=production` rejects development auth at startup.
+Add this exact boundary statement:
 
-- [ ] **Step 3: Add an OIDC configuration contract section without live endpoints**
+```text
+The x-dev-* identity headers are accepted only when DCIECMS_AUTH_MODE=development.
+NODE_ENV=production rejects development authentication at startup.
+OIDC mode never reads x-dev-* identity headers.
+```
 
-Document only the variable names and behavior:
+- [ ] **Step 3: Add the provider-neutral OIDC configuration contract**
+
+Document:
 
 ```text
 DCIECMS_AUTH_MODE=oidc
@@ -1129,11 +1254,11 @@ DCIECMS_OIDC_JWKS_URI=<approved JWKS URI>
 DCIECMS_OIDC_ALLOWED_ALGS=<approved asymmetric algorithms>
 ```
 
-State that actual Magisterial Services/DICT IdP registration, login flow, credentials and deployment remain separate gates.
+State that actual Magisterial Services/DICT IdP registration, browser login flow, credentials and deployment remain separate production gates.
 
-- [ ] **Step 4: Update README and implementation status**
+- [ ] **Step 4: Update README and implementation status with exact remaining boundaries**
 
-Record that Workstream 3 now provides a provider-neutral bearer-verification boundary in code, but do **not** claim production authentication is live. Keep these items explicitly outstanding:
+Record the code boundary as implemented only after Tasks 1-7 are green, while keeping these items outstanding:
 
 ```text
 - real IdP tenant/client registration
@@ -1142,6 +1267,8 @@ Record that Workstream 3 now provides a provider-neutral bearer-verification bou
 - production deployment/activation
 - future optional hybrid DCIECMS-authoritative role/court administration
 ```
+
+Do not describe production authentication as live.
 
 - [ ] **Step 5: Commit documentation**
 
@@ -1156,7 +1283,7 @@ git commit -m "docs: document production authentication boundary"
 
 **Files:**
 - Review all changed files from Tasks 1-8.
-- No new production behavior unless review finds a concrete Critical/Important defect.
+- Add code only when a concrete review defect first has a failing regression test.
 
 **Interfaces:**
 - Produces: reviewed exact branch head eligible for merge.
@@ -1188,7 +1315,7 @@ Expected: frontend tests PASS and Vite production build succeeds.
 
 - [ ] **Step 4: Review the exact branch diff against the approved spec**
 
-Review for at least these failure classes:
+Check every changed line for:
 
 ```text
 - dev-header fallback or header spoofing in OIDC mode
@@ -1205,22 +1332,22 @@ Review for at least these failure classes:
 - production mode accepting DCIECMS_AUTH_MODE=development
 ```
 
-Correct every Critical or Important finding with a RED test first, then the minimum fix, then re-run the affected suite.
+For each Critical or Important defect: add a failing regression test, confirm RED, apply the smallest fix, rerun the affected suite, then rerun the full verification gate.
 
 - [ ] **Step 5: Create/update the pull request and wait for fresh exact-head CI**
 
-The PR body must state:
+Use this scope statement in the PR body:
 
 ```text
 Implements the approved provider-neutral production authentication boundary.
 No production IdP credentials, live authentication activation, production deployment, DNS change, or database migration are included.
 ```
 
-CI must run on the exact final PR head and include backend tests, Court Workspace tests, and production frontend build.
+The exact final PR head must pass GitHub Actions backend tests, Court Workspace tests, and production frontend build.
 
 - [ ] **Step 6: Merge only after exact-head CI is fully GREEN**
 
-Use the repository's established merge method. Record the resulting merge SHA.
+Use the repository's established merge method and record the merge SHA.
 
 - [ ] **Step 7: Verify post-merge `main` CI on the exact merge SHA**
 
@@ -1230,12 +1357,10 @@ Do not call Workstream 3 complete until the `main` push workflow for that exact 
 
 ## Self-Review Checklist
 
-Before execution begins, verify this plan against the approved spec:
-
 - [ ] Every accepted design section maps to at least one implementation task.
 - [ ] `sub`, `roles`, `court_ids`, `explicit_grants` are trusted only after verification.
-- [ ] Missing/malformed/invalid/expired/not-yet-valid/wrong-issuer/wrong-audience/disallowed-alg tokens are covered by 401 tests.
-- [ ] JWKS timeout/unavailability is covered by a fail-closed 503 path.
+- [ ] Missing/malformed/invalid-signature/wrong-issuer/wrong-audience/expired/not-yet-valid/disallowed-alg tokens are covered by 401 tests.
+- [ ] JWKS timeout, network failure, and non-2xx transport failure are fail-closed.
 - [ ] Existing RBAC/court-scope denial remains 403.
 - [ ] OIDC mode never reads `x-dev-*` identity.
 - [ ] Production startup cannot use development auth or incomplete OIDC config.
@@ -1244,4 +1369,4 @@ Before execution begins, verify this plan against the approved spec:
 - [ ] No bearer token or raw claim persistence/logging is introduced.
 - [ ] No live IdP configuration, credentials, production deployment, or DB migration is included.
 - [ ] Full backend/frontend/build/CI/security-review gates are explicit.
-- [ ] Plan contains no `TODO`, `TBD`, `implement later`, or unspecified "add tests" placeholders.
+- [ ] The plan contains no unresolved implementation placeholders.
