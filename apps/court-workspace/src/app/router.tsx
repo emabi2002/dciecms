@@ -6,6 +6,7 @@ import { FilingReviewPage } from '../pages/FilingReviewPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { CasesPage } from '../pages/CasesPage';
 import { MyCasesPage } from '../pages/MyCasesPage';
+import { DailyHearingsPage } from '../pages/DailyHearingsPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
 export const router = createBrowserRouter([
@@ -19,6 +20,7 @@ export const router = createBrowserRouter([
       { path: 'payments', element: <PaymentsPage /> },
       { path: 'cases', element: <CasesPage /> },
       { path: 'judicial/my-cases', element: <MyCasesPage /> },
+      { path: 'judicial/daily-hearings', element: <DailyHearingsPage /> },
       { path: '*', element: <NotFoundPage /> }
     ]
   }
