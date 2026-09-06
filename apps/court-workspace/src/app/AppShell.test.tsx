@@ -21,6 +21,7 @@ describe('Court Workspace routing shell', () => {
     expect(screen.getByRole('link', { name: 'Filings' })).toHaveAttribute('href', '/filings');
     expect(screen.getByRole('link', { name: 'Payments' })).toHaveAttribute('href', '/payments');
     expect(screen.getByRole('link', { name: 'Cases' })).toHaveAttribute('href', '/cases');
+    expect(screen.getByRole('link', { name: 'My Cases' })).toHaveAttribute('href', '/judicial/my-cases');
   });
 
   it('renders the not-found page for an unmatched route', () => {
