@@ -13,7 +13,15 @@ const DOCUMENT=Object.freeze({
 });
 const JOB=Object.freeze({scanJobId:'SCAN-1',documentId:'DOC-1',status:'LEASED',attemptCount:0,maxAttempts:5});
 
-function harness(scanResult={status:'CLEAN',engine:'fixture',version:'1'}) {
+function harness(scanResult={status:'CLEAN',engine:'fixture',version:'1'}, {
+  storageEvidence={
+    objectKey:DOCUMENT.storageObjectKey,
+    checksumSha256:DOCUMENT.checksumSha256,
+    sizeBytes:DOCUMENT.sizeBytes,
+    detectedMimeType:DOCUMENT.detectedMimeType
+  },
+  storageError=null
+}={}) {
   const calls=[];
   const state={document:DOCUMENT};
   const repository={
@@ -28,10 +36,11 @@ function harness(scanResult={status:'CLEAN',engine:'fixture',version:'1'}) {
     async markRetryableFailure(input){ calls.push(['markRetryableFailure',input]); return Object.freeze({...JOB,status:'FAILED_RETRYABLE',attemptCount:1,resultCode:'ERROR_RETRYABLE'}); },
     async markPermanentFailure(input){ calls.push(['markPermanentFailure',input]); return Object.freeze({...JOB,status:'DEAD_LETTER',attemptCount:1,resultCode:input.resultCode}); }
   };
+  const storage={async headObject(input){calls.push(['headObject',input]); if(storageError) throw storageError; return Object.freeze({...storageEvidence});}};
   const scanner={async scan(input){ calls.push(['scan',input]); if(scanResult instanceof Error) throw scanResult; return scanResult; }};
   const auditStore={async append(event){ calls.push(['audit',event]); return Object.freeze({...event}); }};
   const transactionManager={async withTransaction(work){ calls.push(['tx.begin']); try{const result=await work();calls.push(['tx.commit']);return result;}catch(error){calls.push(['tx.rollback']);throw error;} }};
-  const worker=new DocumentScanWorker({repository,scanStore,scanner,auditStore,transactionManager,workerId:'worker-a',clock:()=>new Date(NOW)});
+  const worker=new DocumentScanWorker({repository,scanStore,storage,scanner,auditStore,transactionManager,workerId:'worker-a',clock:()=>new Date(NOW)});
   return {worker,calls,state};
 }
 
@@ -49,6 +58,33 @@ test('CLEAN scan activates exact quarantined document and completes job inside o
   const audit=h.calls.find(call=>call[0]==='audit')[1];
   assert.equal(audit.action,'document.scan.clean');
   assert.equal(JSON.stringify(audit).includes(DOCUMENT.storageObjectKey),false);
+});
+
+test('storage metadata failure is retryable and scanner is never invoked',async()=>{
+  const h=harness({status:'CLEAN',engine:'fixture',version:'1'},{storageError:new Error('private-storage-token=secret')});
+  const result=await h.worker.runOnce();
+  assert.equal(result.retryable,1);
+  assert.equal(h.state.document.status,'QUARANTINED');
+  assert.equal(callNames(h.calls).includes('scan'),false);
+  assert.equal(callNames(h.calls).includes('activateCleanDocument'),false);
+  const failed=h.calls.find(call=>call[0]==='markRetryableFailure')[1];
+  assert.equal(failed.errorCode,'STORAGE_UNAVAILABLE');
+  assert.equal(JSON.stringify(h.calls.filter(call=>call[0]==='audit')).includes('secret'),false);
+});
+
+test('scan-time storage integrity drift fails closed and cannot activate document',async()=>{
+  const h=harness({status:'CLEAN',engine:'fixture',version:'1'},{storageEvidence:{
+    objectKey:DOCUMENT.storageObjectKey,
+    checksumSha256:'b'.repeat(64),
+    sizeBytes:DOCUMENT.sizeBytes,
+    detectedMimeType:DOCUMENT.detectedMimeType
+  }});
+  const result=await h.worker.runOnce();
+  assert.equal(result.permanentFailure,1);
+  assert.equal(h.state.document.status,'REJECTED');
+  assert.equal(callNames(h.calls).includes('scan'),false);
+  assert.equal(callNames(h.calls).includes('activateCleanDocument'),false);
+  assert.equal(callNames(h.calls).includes('markClean'),false);
 });
 
 test('INFECTED scan rejects document and records terminal infected job without releasing access',async()=>{
