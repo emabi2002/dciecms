@@ -18,6 +18,8 @@ const DEFAULT_DOCUMENT_POLICY = Object.freeze({
   classifications: Object.freeze(['PUBLIC', 'INTERNAL', 'CONFIDENTIAL', 'RESTRICTED', 'SEALED'])
 });
 
+const DISPOSITION_LIFECYCLE_STATES = new Set(['REJECTED', 'ARCHIVED', 'SUPERSEDED', 'WITHDRAWN']);
+
 class DocumentPolicyError extends Error {
   constructor(message) {
     super(message);
@@ -103,10 +105,22 @@ function authorizeDocumentClassification(actor, document, operation = 'view') {
   return true;
 }
 
+function isDocumentDispositionEligible(document, { at = new Date() } = {}) {
+  if (!document || document.legalHold !== false) return false;
+  const status = String(document.status || '').trim().toUpperCase();
+  if (!DISPOSITION_LIFECYCLE_STATES.has(status)) return false;
+
+  const eligibleAt = Date.parse(String(document.dispositionEligibleAt || ''));
+  const evaluatedAt = at instanceof Date ? at.getTime() : Date.parse(String(at || ''));
+  if (!Number.isFinite(eligibleAt) || !Number.isFinite(evaluatedAt)) return false;
+  return eligibleAt <= evaluatedAt;
+}
+
 module.exports = {
   DEFAULT_DOCUMENT_POLICY,
   DocumentPolicyError,
   validateDocumentIntent,
   validateAuthoritativeObject,
-  authorizeDocumentClassification
+  authorizeDocumentClassification,
+  isDocumentDispositionEligible
 };
