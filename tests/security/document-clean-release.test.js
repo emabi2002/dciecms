@@ -36,8 +36,14 @@ function fixture(scanStatus){
   const auditStore={async append(event){return event;}};
   const tx={async withTransaction(work){return work();}};
   const storage=new MemoryDocumentStorage();
+  storage.putObjectMetadata({
+    objectKey:document.storageObjectKey,
+    sizeBytes:document.sizeBytes,
+    checksumSha256:document.checksumSha256,
+    detectedMimeType:document.detectedMimeType
+  });
   const secure=new SecureDocumentService({repository,storage,auditStore,clock:()=>new Date(NOW)});
-  const worker=new DocumentScanWorker({repository,scanStore,scanner,auditStore,transactionManager:tx,workerId:'worker-a',clock:()=>new Date(NOW)});
+  const worker=new DocumentScanWorker({repository,scanStore,storage,scanner,auditStore,transactionManager:tx,workerId:'worker-a',clock:()=>new Date(NOW)});
   return {state,secure,worker};
 }
 
