@@ -5,7 +5,7 @@
 
 ## Integration status
 
-PR #1 has been merged into `main`. The merged baseline includes the original R0/R1 executable court-management slice and the first R2 judicial-operations implementation.
+The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, and R3 reliability hardening. R3 adds durable restart-sensitive controls but does not perform any production deployment or live database migration.
 
 ## Delivered capabilities
 
@@ -39,17 +39,35 @@ PR #1 has been merged into `main`. The merged baseline includes the original R0/
 - migrations `0007` through `0010`
 - backend, HTTP, PostgreSQL, frontend and regression tests for judicial operations
 
+### R3 — Durable audit and filing-submission idempotency
+- migration `0011_durable_controls.sql`
+- `workflow.idempotency_records` with uniqueness scoped by actor subject, operation, resource and idempotency key
+- atomic PostgreSQL filing submission that claims idempotency, performs `DRAFT -> SUBMITTED`, creates the Registry validation task and persists the canonical response in one transaction
+- duplicate/restarted filing-submission replay that returns the persisted response without repeating business mutations
+- rollback regression proving a failed filing transition rolls back the transaction before task/response persistence
+- `audit.audit_events.actor_subject` support for application identity subjects that are not guaranteed to be UUIDs
+- `PostgresAuditStore` parameterized append/read implementation
+- awaited audit writes across persistent Registry/finance/case-opening services and all judicial/Workbench service paths
+- PostgreSQL runtime injection of the durable audit store when `DATABASE_URL` is configured
+- Supabase `supabase_test` SQL mapping for `workflow.idempotency_records`
+- incremental isolated test-profile migration `db/supabase/20260906_dciecms_test_0011.sql`
+
+R3 currently makes audit persistence durable and observable before service success is returned. It does **not** yet claim that every business mutation and corresponding audit event share the same physical database transaction. That stronger transactional coupling remains a later reliability milestone.
+
 ## Verification controls present in the repository
 - GitHub Actions CI using Node.js 20
 - backend regression test execution
 - Court Workspace test execution
 - production frontend build verification
 - live Supabase smoke-test workflow
-- Supabase test migration bundle covering migrations `0001` through `0010`
+- Supabase test migration bundle covering R0-R2 (`0001` through `0010`)
+- incremental Supabase isolated-test migration for R3 (`0011`)
 
-These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed.
+These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3 Supabase test-profile migration is repository-delivered but has not been represented as executed against a live database by this implementation work.
 
 ## Intentionally outstanding / environment-dependent work
+- full mutation+audit transaction coupling across all PostgreSQL business operations
+- durable notification/event outbox and provider delivery semantics
 - production IdP/OIDC/OAuth2 gateway integration and signed-claim validation
 - approved production PostgreSQL/Supabase environment and controlled live migration execution
 - private object storage and malware scanning pipeline
@@ -64,4 +82,4 @@ These controls do not by themselves constitute production deployment approval or
 
 `x-dev-*` request headers are development-only scaffolding. They must never be accepted as production identity evidence. Production authentication must resolve signed, validated claims from the approved identity platform/API gateway and retain server-side permission, court, record-relationship and confidentiality enforcement.
 
-The browser is not an authorization boundary. Registry workflow, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility must continue to be enforced by the API and database layers.
+The browser is not an authorization boundary. Registry workflow, request replay, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility must continue to be enforced by the API and database layers.

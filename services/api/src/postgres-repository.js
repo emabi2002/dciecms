@@ -88,6 +88,33 @@ class PostgresRepository {
       return mapFiling(filing);
     } catch (error) { try { await client.query('ROLLBACK'); } catch {} throw error; } finally { client.release(); }
   }
+  async submitFilingIdempotent({ filingId, taskId, actorSubject, submittedAt, idempotencyKey }) {
+    if (typeof this.db.connect !== 'function') throw new TypeError('submitFilingIdempotent requires a pool with connect()');
+    const client = await this.db.connect();
+    try {
+      await client.query('BEGIN');
+      const claim = await client.query(`INSERT INTO workflow.idempotency_records (actor_subject, operation, resource_id, idempotency_key) VALUES ($1,'filing.submit',$2,$3) ON CONFLICT (actor_subject, operation, resource_id, idempotency_key) DO NOTHING RETURNING idempotency_record_id`, [actorSubject, filingId, idempotencyKey]);
+      if (claim.rows.length === 0) {
+        const replay = await client.query(`SELECT response_payload FROM workflow.idempotency_records WHERE actor_subject=$1 AND operation='filing.submit' AND resource_id=$2 AND idempotency_key=$3`, [actorSubject, filingId, idempotencyKey]);
+        if (replay.rows.length !== 1 || replay.rows[0].response_payload == null) {
+          const error = new Error('Idempotency replay response is unavailable');
+          error.code = 'IDEMPOTENCY_REPLAY_CONFLICT';
+          throw error;
+        }
+        const payload = typeof replay.rows[0].response_payload === 'string' ? JSON.parse(replay.rows[0].response_payload) : replay.rows[0].response_payload;
+        await client.query('COMMIT');
+        return Object.freeze(JSON.parse(JSON.stringify(payload)));
+      }
+      const filingResult = await client.query(`UPDATE registry.filings SET status='SUBMITTED', submitted_at=$2 WHERE filing_id=$1 AND status='DRAFT' RETURNING ${FILING_COLUMNS}`, [filingId, submittedAt]);
+      if (filingResult.rows.length !== 1) { const e = new Error('Filing was not in DRAFT state'); e.code='FILING_STATE_CONFLICT'; throw e; }
+      const filingRow = filingResult.rows[0];
+      await client.query(`INSERT INTO workflow.workflow_tasks (task_id, filing_id, court_id, task_type, assigned_role_code, status) VALUES ($1,$2,$3,'REGISTRY_VALIDATE_FILING','REG','PENDING')`, [taskId, filingId, filingRow.court_id]);
+      const filing = mapFiling(filingRow);
+      await client.query(`UPDATE workflow.idempotency_records SET response_payload=$1::jsonb WHERE idempotency_record_id=$2`, [JSON.stringify(filing), claim.rows[0].idempotency_record_id]);
+      await client.query('COMMIT');
+      return filing;
+    } catch (error) { try { await client.query('ROLLBACK'); } catch {} throw error; } finally { client.release(); }
+  }
   async listWorkflowTasks({ courtIds, includeCompleted = false }) {
     const statusFilter = includeCompleted ? '' : "AND status <> 'COMPLETED'";
     const result = await this.db.query(`SELECT task_id, filing_id, court_id, task_type, assigned_role_code, priority, status, due_at, created_at, completed_at, completed_by_subject FROM workflow.workflow_tasks WHERE court_id = ANY($1::uuid[]) ${statusFilter} ORDER BY created_at ASC`, [courtIds]);

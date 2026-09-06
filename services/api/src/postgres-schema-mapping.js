@@ -11,6 +11,7 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'registry.filings': 'dciecms_test.registry_filings',
   'documents.documents': 'dciecms_test.documents',
   'audit.audit_events': 'dciecms_test.audit_events',
+  'workflow.idempotency_records': 'dciecms_test.workflow_idempotency_records',
   'workflow.workflow_tasks': 'dciecms_test.workflow_tasks',
   'finance.fee_assessments': 'dciecms_test.finance_fee_assessments',
   'finance.payments': 'dciecms_test.finance_payments',
