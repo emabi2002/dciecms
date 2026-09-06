@@ -1,6 +1,8 @@
 'use strict';
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const path = require('node:path');
 const { JudicialPostgresRepository } = require('../../services/api/src/judicial-postgres-repository');
 
 const COURT_A = '11111111-1111-1111-1111-111111111111';
@@ -23,6 +25,14 @@ function caseRow(overrides = {}) {
     ...overrides
   };
 }
+
+test('R2 assignment migration adds assignment evidence and assignment indexes', () => {
+  const sql = fs.readFileSync(path.join(__dirname, '../../db/migrations/0007_judicial_assignment.sql'), 'utf8');
+  assert.match(sql, /assigned_to_subject/i);
+  assert.match(sql, /assigned_by_subject/i);
+  assert.match(sql, /assigned_at/i);
+  assert.match(sql, /case.*assigned/i);
+});
 
 test('judicial repository resolves an active MAG assignment in the requested court', async () => {
   const calls = [];
