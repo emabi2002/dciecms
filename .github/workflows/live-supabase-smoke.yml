@@ -2,6 +2,11 @@ name: Live Supabase Smoke
 
 on:
   workflow_dispatch:
+  push:
+    branches:
+      - feat/r2-judicial-operations
+    paths:
+      - '.github/workflows/live-supabase-smoke.yml'
 
 permissions:
   contents: read
