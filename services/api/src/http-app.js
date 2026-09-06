@@ -37,6 +37,14 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/workflow/tasks') return send(res, 200, await service.listWorkflowTasks(actor, { includeCompleted: url.searchParams.get('includeCompleted') === 'true' }));
       if (req.method === 'GET' && path === '/judicial/my-cases') return send(res, 200, await service.listMyCases(actor));
       if (req.method === 'GET' && path === '/judicial/daily-list') return send(res, 200, await service.listDailyHearings(actor, { date: url.searchParams.get('date') }));
+      if (req.method === 'GET' && path === '/judicial/pending-decisions') return send(res, 200, await service.listPendingDecisions(actor));
+
+      const judicialCaseGet = path.match(/^\/judicial\/cases\/([^/]+)$/);
+      if (req.method === 'GET' && judicialCaseGet) return send(res, 200, await service.getJudicialCase(actor, judicialCaseGet[1]));
+      const judicialHearingGet = path.match(/^\/judicial\/hearings\/([^/]+)$/);
+      if (req.method === 'GET' && judicialHearingGet) return send(res, 200, await service.getJudicialHearing(actor, judicialHearingGet[1]));
+      const judicialJudgmentGet = path.match(/^\/judicial\/judgments\/([^/]+)$/);
+      if (req.method === 'GET' && judicialJudgmentGet) return send(res, 200, await service.getJudgment(actor, judicialJudgmentGet[1]));
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) return send(res, 200, await service.getFiling(actor, filingGet[1]));
