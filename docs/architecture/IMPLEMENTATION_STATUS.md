@@ -5,7 +5,7 @@
 
 ## Integration status
 
-The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, and R3 reliability hardening. R3 adds durable restart-sensitive controls but does not perform any production deployment or live database migration.
+The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, and R4 transactional audit coupling. R4 strengthens the PostgreSQL runtime transaction boundary but does not perform any production deployment or live database migration.
 
 ## Delivered capabilities
 
@@ -52,21 +52,32 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - Supabase `supabase_test` SQL mapping for `workflow.idempotency_records`
 - incremental isolated test-profile migration `db/supabase/20260906_dciecms_test_0011.sql`
 
-R3 currently makes audit persistence durable and observable before service success is returned. It does **not** yet claim that every business mutation and corresponding audit event share the same physical database transaction. That stronger transactional coupling remains a later reliability milestone.
+### R4 — Transactional audit coupling
+- `PostgresTransactionManager` provides one request-scoped outer PostgreSQL transaction for mutating runtime service operations
+- `AsyncLocalStorage` isolates concurrent transaction contexts
+- repository SQL and `PostgresAuditStore` SQL share the same active physical client during a mutating service operation
+- existing repository-local transaction blocks are contained inside the outer service transaction and cannot prematurely commit or release it
+- immutable reviewed transaction registry covers the current Registry, filing, document-registration, finance, case-opening, judicial, hearing, proceeding and judgment mutation methods
+- successful business mutation and awaited application audit evidence commit together
+- audit insert failure rolls back the preceding business mutation
+- read-only operations remain outside the mutation transaction wrapper
+- in-memory/no-`DATABASE_URL` runtime remains unchanged
+- R4 introduces no schema migration and has not executed any live database or production deployment action
 
 ## Verification controls present in the repository
-- GitHub Actions CI using Node.js 20
+- GitHub Actions CI using Node.js 20 for the application test/build runtime
 - backend regression test execution
 - Court Workspace test execution
 - production frontend build verification
 - live Supabase smoke-test workflow
 - Supabase test migration bundle covering R0-R2 (`0001` through `0010`)
 - incremental Supabase isolated-test migration for R3 (`0011`)
+- R4 transaction-manager regressions for commit, rollback and nested repository transaction handling
+- R4 runtime regressions proving business SQL and audit SQL use one client and that audit failure rolls back business mutation
 
 These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3 Supabase test-profile migration is repository-delivered but has not been represented as executed against a live database by this implementation work.
 
 ## Intentionally outstanding / environment-dependent work
-- full mutation+audit transaction coupling across all PostgreSQL business operations
 - durable notification/event outbox and provider delivery semantics
 - production IdP/OIDC/OAuth2 gateway integration and signed-claim validation
 - approved production PostgreSQL/Supabase environment and controlled live migration execution

@@ -4,7 +4,7 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, and the first R3 reliability-hardening controls.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, and R4 transactional audit coupling for PostgreSQL-backed mutations.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
@@ -46,7 +46,19 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - PostgreSQL runtime injection of the durable audit store when `DATABASE_URL` is configured
 - Supabase isolated-test profile mapping and incremental `dciecms_test` migration for R3 durable controls
 
-R3 does **not** yet claim that every business mutation and its audit event are committed in one physical database transaction. Full mutation+audit transaction coupling and a durable notification/event outbox remain later reliability controls.
+### R4 transactional audit coupling
+- `PostgresTransactionManager` using request-scoped `AsyncLocalStorage` transaction context
+- one shared PostgreSQL transaction manager for repositories and `PostgresAuditStore`
+- immutable reviewed registry of the current mutating service operations that require an outer transaction boundary
+- compatibility with repository methods that already use internal `BEGIN` / `COMMIT` / `ROLLBACK` blocks, without allowing nested commits to escape the outer service transaction
+- business mutation SQL and its awaited application audit insert routed through the same physical PostgreSQL client
+- audit-write failure rolls back the preceding business mutation instead of leaving committed state without its application audit evidence
+- successful mutation and audit persistence commit together before the service call returns
+- read-only operations remain outside the mutation transaction boundary
+- no-database/in-memory runtime remains unchanged
+- no schema migration or live database execution is required by R4 itself
+
+The next reliability control after R4 is a durable notification/event outbox so external delivery can be retried safely without weakening the transactional business-state boundary.
 
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
