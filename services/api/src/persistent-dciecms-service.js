@@ -5,15 +5,32 @@ const { AuditStore } = require('../../../packages/audit');
 const { ConflictError, NotFoundError, ValidationError } = require('./dciecms-service');
 
 class PersistentDciecmsService {
-  constructor({ repository, auditStore = new AuditStore() } = {}) {
+  constructor({ repository, auditStore = new AuditStore(), outboxStore = null } = {}) {
     if (!repository) throw new TypeError('PersistentDciecmsService requires a repository');
+    if (outboxStore && typeof outboxStore.enqueue !== 'function') throw new TypeError('outboxStore must expose enqueue()');
     this.repository = repository;
     this.audit = auditStore;
+    this.outbox = outboxStore;
     this.idempotency = new Map();
   }
 
   async _audit(actor, action, resourceType, resourceId, details = {}) {
     return this.audit.append({ actorUserId: actor.userId, effectiveRoles: actor.roles, action, resourceType, resourceId, ...details });
+  }
+
+  async _emitDomainEvent(actor, eventType, aggregateType, aggregateId, { courtId = null, payload = {} } = {}) {
+    if (!this.outbox) return null;
+    return this.outbox.enqueue({
+      eventType,
+      aggregateType,
+      aggregateId,
+      courtId,
+      actorSubject: actor.userId,
+      correlationId: actor.correlationId || null,
+      deduplicationKey: `${aggregateId}:${eventType}`,
+      payload,
+      headers: { schemaVersion: 1 }
+    });
   }
 
   _requireRegistry(actor) {
@@ -84,6 +101,10 @@ class PersistentDciecmsService {
       try {
         const submitted = await this.repository.submitFilingIdempotent({ filingId, taskId: randomUUID(), actorSubject: actor.userId, submittedAt: new Date().toISOString(), idempotencyKey });
         await this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
+        await this._emitDomainEvent(actor, 'filing.submitted', 'filing', filingId, {
+          courtId: filing.courtId,
+          payload: { filingId, courtId: filing.courtId, status: submitted.status, filingReference: submitted.filingReference || filing.filingReference || null }
+        });
         return submitted;
       } catch (error) {
         if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing submission state conflict');
@@ -98,6 +119,10 @@ class PersistentDciecmsService {
       const submitted = await this.repository.submitFilingAndCreateTask({ filingId, taskId: randomUUID(), actorSubject: actor.userId, submittedAt: new Date().toISOString() });
       this.idempotency.set(key, submitted);
       await this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
+      await this._emitDomainEvent(actor, 'filing.submitted', 'filing', filingId, {
+        courtId: filing.courtId,
+        payload: { filingId, courtId: filing.courtId, status: submitted.status, filingReference: submitted.filingReference || filing.filingReference || null }
+      });
       return submitted;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing submission state conflict');
@@ -192,6 +217,10 @@ class PersistentDciecmsService {
     if (payment.status !== 'PENDING') throw new ConflictError(`Payment cannot be confirmed from status ${payment.status}`);
     const confirmed = await this.repository.confirmPayment({ paymentId, providerReference: String(providerReference).trim(), actorSubject: actor.userId, at: new Date().toISOString() });
     await this._audit(actor, 'finance.payment.confirm', 'payment', paymentId, { courtId: payment.courtId, providerReference: String(providerReference).trim() });
+    await this._emitDomainEvent(actor, 'payment.confirmed', 'payment', paymentId, {
+      courtId: confirmed.courtId,
+      payload: { paymentId, courtId: confirmed.courtId, status: confirmed.status, amountMinor: confirmed.amountMinor, currency: confirmed.currency }
+    });
     return confirmed;
   }
 
@@ -243,6 +272,10 @@ class PersistentDciecmsService {
     if (!assessment || assessment.filingId !== filingId) throw new ConflictError('Payment assessment does not belong to the filing');
     const opened = await this.repository.openCaseFromConfirmedPayment({ caseId: randomUUID(), filingId, paymentId, courtId: filing.courtId, caseTypeCode: filing.caseTypeCode, actorSubject: actor.userId, openedAt: new Date().toISOString() });
     await this._audit(actor, 'case.open', 'case', opened.caseId, { courtId: filing.courtId, filingId, paymentId, caseNumber: opened.caseNumber });
+    await this._emitDomainEvent(actor, 'case.opened', 'case', opened.caseId, {
+      courtId: filing.courtId,
+      payload: { caseId: opened.caseId, caseNumber: opened.caseNumber, filingId, paymentId, courtId: filing.courtId, status: opened.status }
+    });
     return opened;
   }
 }

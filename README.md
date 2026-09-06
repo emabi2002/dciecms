@@ -4,7 +4,7 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, and R4 transactional audit coupling for PostgreSQL-backed mutations.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, and R5 durable event/outbox infrastructure for PostgreSQL-backed mutations.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
@@ -58,13 +58,25 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - no-database/in-memory runtime remains unchanged
 - no schema migration or live database execution is required by R4 itself
 
-The next reliability control after R4 is a durable notification/event outbox so external delivery can be retried safely without weakening the transactional business-state boundary.
+### R5 durable event/outbox capabilities
+- migration `0012_event_outbox.sql` for durable `integration.outbox_events`
+- isolated Supabase test-profile migration and logical table mapping for the R5 outbox
+- idempotent event enqueue by event type plus stable server-generated deduplication key
+- bounded due-event claiming with `FOR UPDATE SKIP LOCKED`, worker leases and stale-lease recovery
+- worker-owned delivery/failure transitions, deterministic exponential retry and dead-letter handling
+- one-shot `OutboxDispatcher.runOnce()` contract without a permanent scheduler or external provider dependency
+- durable lifecycle events for `filing.submitted`, `payment.confirmed`, `case.opened`, `hearing.scheduled`, `hearing.adjourned`, `hearing.completed` and `judgment.issued`
+- generic payment event payloads exclude provider references; hearing-adjournment event payloads exclude free-text judicial reasons
+- repository, application audit store and outbox store share the same `PostgresTransactionManager` in the PostgreSQL runtime
+- representative regression proving payment mutation, audit evidence and outbox enqueue commit on one physical PostgreSQL client
+- outbox enqueue failure rolls back preceding business mutation and audit work
+- delivery semantics are **at least once**; every eventual downstream/provider handler must be idempotent using the outbox event ID, deduplication key or an equivalent provider-side mechanism
 
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
 - live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
-- the Supabase R3 migration is provided as `db/supabase/20260906_dciecms_test_0011.sql`; its presence does not mean it has been executed against any live environment
-- production deployment is not implied by the presence of deployment, migration or smoke-test tooling
+- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`) and R5 (`db/supabase/20260906_dciecms_test_0012.sql`); their presence does not mean they have been executed against any live environment
+- production deployment is not implied by the presence of deployment, migration, outbox or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -106,4 +118,4 @@ The `x-dev-*` request headers are development-only scaffolding. They are **not p
 
 The browser is not an authorization boundary. Court scope, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
 
-Real private object storage, malware scanning, external payment-gateway callbacks, production IdP integration, email/SMS providers, government-agency integrations, production hosting credentials, WAF/secrets-vault configuration and the production observability stack remain intentionally outside the current repository baseline until those external environments and credentials are approved.
+Real private object storage, malware scanning, external payment-gateway callbacks, production IdP integration, email/SMS providers, government-agency integrations, permanent outbox worker scheduling, production hosting credentials, WAF/secrets-vault configuration and the production observability stack remain intentionally outside the current repository baseline until those external environments and credentials are approved.

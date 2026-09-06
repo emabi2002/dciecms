@@ -65,6 +65,10 @@ class JudicialOperationsService extends PersistentDciecmsService {
     if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) throw new ValidationError('Hearing schedule is invalid');
     const hearing = await this.repository.createHearing({ hearingId: randomUUID(), caseId, courtId: courtCase.courtId, hearingType, scheduledStart: new Date(startMs).toISOString(), scheduledEnd: new Date(endMs).toISOString(), courtroom: input?.courtroom ? String(input.courtroom).trim() : null, actorSubject: actor.userId, createdAt: new Date().toISOString() });
     await this._audit(actor, 'hearing.schedule', 'hearing', hearing.hearingId, { courtId: courtCase.courtId, caseId });
+    await this._emitDomainEvent(actor, 'hearing.scheduled', 'hearing', hearing.hearingId, {
+      courtId: courtCase.courtId,
+      payload: { hearingId: hearing.hearingId, caseId, courtId: courtCase.courtId, status: hearing.status, hearingType: hearing.hearingType, scheduledStart: hearing.scheduledStart, scheduledEnd: hearing.scheduledEnd }
+    });
     return hearing;
   }
 
@@ -85,6 +89,10 @@ class JudicialOperationsService extends PersistentDciecmsService {
     try {
       const adjourned = await this.repository.adjournHearing({ hearingId, reason, nextStart, nextEnd, nextHearingId: nextStart ? randomUUID() : null, actorSubject: actor.userId, at: new Date().toISOString() });
       await this._audit(actor, 'hearing.adjourn', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId, reason });
+      await this._emitDomainEvent(actor, 'hearing.adjourned', 'hearing', hearingId, {
+        courtId: hearing.courtId,
+        payload: { hearingId, caseId: hearing.caseId, courtId: hearing.courtId, status: adjourned.status, nextStart, nextEnd }
+      });
       return adjourned;
     } catch (error) { return this._stateConflict(error, 'HEARING_STATE_CONFLICT', 'Hearing state conflict'); }
   }
@@ -138,6 +146,10 @@ class JudicialOperationsService extends PersistentDciecmsService {
     try {
       const completed = await this.repository.completeHearing({ hearingId, outcomeCode, actorSubject: actor.userId, at: new Date().toISOString() });
       await this._audit(actor, 'hearing.complete', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId, outcomeCode });
+      await this._emitDomainEvent(actor, 'hearing.completed', 'hearing', hearingId, {
+        courtId: hearing.courtId,
+        payload: { hearingId, caseId: hearing.caseId, courtId: hearing.courtId, status: completed.status, outcomeCode }
+      });
       return completed;
     } catch (error) { return this._stateConflict(error, 'HEARING_STATE_CONFLICT', 'Hearing state conflict'); }
   }
@@ -204,6 +216,10 @@ class JudicialOperationsService extends PersistentDciecmsService {
     try {
       const row = await this.repository.issueJudgment({ judgmentId, actorSubject: actor.userId, at: new Date().toISOString() });
       await this._audit(actor, 'judgment.issue', 'judgment', judgmentId, { courtId: judgment.courtId, caseId: judgment.caseId });
+      await this._emitDomainEvent(actor, 'judgment.issued', 'judgment', judgmentId, {
+        courtId: judgment.courtId,
+        payload: { judgmentId, caseId: judgment.caseId, courtId: judgment.courtId, status: row.status }
+      });
       return row;
     } catch (error) { return this._stateConflict(error, 'JUDGMENT_STATE_CONFLICT', 'Judgment state conflict'); }
   }
