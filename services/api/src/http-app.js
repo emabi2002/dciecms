@@ -1,5 +1,9 @@
 'use strict';
 const { AccessDeniedError } = require('../../../packages/rbac');
+const {
+  AuthenticationError,
+  AuthenticationUnavailableError
+} = require('../../../packages/auth');
 const { NotFoundError, ConflictError, ValidationError } = require('./dciecms-service');
 
 async function readJson(req) {
@@ -9,13 +13,23 @@ async function readJson(req) {
   try { return JSON.parse(body); } catch { throw new ValidationError('Invalid JSON body'); }
 }
 
-function send(res, status, payload) {
+function send(res, status, payload, headers = {}) {
   const data = JSON.stringify(payload);
-  res.writeHead(status, { 'content-type': 'application/json; charset=utf-8', 'content-length': Buffer.byteLength(data) });
+  res.writeHead(status, {
+    'content-type': 'application/json; charset=utf-8',
+    'content-length': Buffer.byteLength(data),
+    ...headers
+  });
   res.end(data);
 }
 
 function mapError(error, res) {
+  if (error instanceof AuthenticationError) {
+    return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
+  }
+  if (error instanceof AuthenticationUnavailableError) {
+    return send(res, 503, { error: 'authentication_unavailable' });
+  }
   if (error instanceof AccessDeniedError) return send(res, 403, { error: 'forbidden' });
   if (error instanceof NotFoundError) return send(res, 404, { error: 'not_found' });
   if (error instanceof ConflictError) return send(res, 409, { error: 'conflict', message: error.message });
@@ -26,7 +40,7 @@ function mapError(error, res) {
 function createHttpApp(service, actorResolver) {
   return async function handler(req, res) {
     try {
-      const actor = actorResolver(req);
+      const actor = await actorResolver(req);
       if (!actor) return send(res, 401, { error: 'unauthorized' });
       const url = new URL(req.url, 'http://local');
       const path = url.pathname;

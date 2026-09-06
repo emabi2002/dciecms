@@ -4,7 +4,7 @@ const assert=require('node:assert/strict');
 const http=require('node:http');
 const {createHttpApp}=require('../../services/api/src/http-app');
 const {DciecmsService}=require('../../services/api/src/dciecms-service');
-const {resolveActorFromClaims}=require('../../packages/auth');
+const {resolveActorFromClaims,AuthenticationError,AuthenticationUnavailableError}=require('../../packages/auth');
 
 async function withServer(fn){
   const svc=new DciecmsService();
@@ -24,6 +24,14 @@ async function withCustomService(svc, fn){
   const base=`http://127.0.0.1:${server.address().port}`;
   try{return await fn(base,svc);} finally {await new Promise(r=>server.close(r));}
 }
+
+async function withResolver(resolver, service, fn){
+  const server=http.createServer(createHttpApp(service,resolver));
+  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
+  const base=`http://127.0.0.1:${server.address().port}`;
+  try{return await fn(base);} finally {await new Promise(resolve=>server.close(resolve));}
+}
+
 const hdr={'content-type':'application/json','x-dev-sub':'reg-a','x-dev-roles':'REG','x-dev-courts':'COURT-A'};
 
 test('protected route returns 401 without actor',async()=>withServer(async(base)=>{
@@ -109,7 +117,76 @@ test('finance endpoints expose assessment, pending payment and controlled confir
 
 test('ICT admin receives 403 on registry queue without metadata leakage',async()=>withServer(async(base)=>{
   const res=await fetch(base+'/registry/filings',{headers:{'x-dev-sub':'ict','x-dev-roles':'ICT-ADMIN','x-dev-courts':'COURT-A'}});
-  assert.equal(res.status,403); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
+  assert.equal(res.status,403); assert.equal(res.headers.get('www-authenticate'),null); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
 }));
 
 test('unknown route returns 404',async()=>withServer(async(base)=>{ const res=await fetch(base+'/missing',{headers:hdr}); assert.equal(res.status,404); }));
+
+test('HTTP adapter awaits asynchronous actor resolver',async()=>{
+  await withResolver(
+    async()=>({userId:'u-1',roles:['REG'],courtIds:['COURT-A'],explicitGrants:[]}),
+    {async listRegistryQueue(actor){assert.equal(actor.userId,'u-1'); return[];}},
+    async base=>assert.equal((await fetch(`${base}/registry/filings`)).status,200)
+  );
+});
+
+test('authentication failure returns sanitized 401 bearer challenge',async()=>{
+  await withResolver(
+    async()=>{throw new AuthenticationError('wrong audience secret detail');},
+    {},
+    async base=>{
+      const response=await fetch(`${base}/registry/filings`);
+      assert.equal(response.status,401);
+      assert.equal(response.headers.get('www-authenticate'),'Bearer');
+      assert.deepEqual(await response.json(),{error:'unauthorized'});
+    }
+  );
+});
+
+test('authentication error response never echoes bearer material or verifier detail',async()=>{
+  const sentinel='TOKEN_SENTINEL_DO_NOT_LEAK';
+  await withResolver(
+    async req=>{
+      throw new AuthenticationError(`invalid ${req.headers.authorization} verifier-internal-detail`);
+    },
+    {},
+    async base=>{
+      const response=await fetch(`${base}/registry/filings`,{
+        headers:{authorization:`Bearer ${sentinel}`}
+      });
+      const text=await response.text();
+      assert.equal(response.status,401);
+      assert.equal(response.headers.get('www-authenticate'),'Bearer');
+      assert.equal(text.includes(sentinel),false);
+      assert.equal(text.includes('verifier-internal-detail'),false);
+    }
+  );
+});
+
+test('authentication infrastructure failure returns sanitized 503',async()=>{
+  await withResolver(
+    async()=>{throw new AuthenticationUnavailableError('jwks network detail');},
+    {},
+    async base=>{
+      const response=await fetch(`${base}/registry/filings`);
+      assert.equal(response.status,503);
+      assert.equal(response.headers.get('www-authenticate'),null);
+      assert.deepEqual(await response.json(),{error:'authentication_unavailable'});
+    }
+  );
+});
+
+test('unexpected authentication boundary error returns sanitized 500',async()=>{
+  await withResolver(
+    async()=>{throw new Error('INTERNAL_AUTH_DETAIL_DO_NOT_LEAK');},
+    {},
+    async base=>{
+      const response=await fetch(`${base}/registry/filings`);
+      const text=await response.text();
+      assert.equal(response.status,500);
+      assert.equal(response.headers.get('www-authenticate'),null);
+      assert.equal(text.includes('INTERNAL_AUTH_DETAIL_DO_NOT_LEAK'),false);
+      assert.deepEqual(JSON.parse(text),{error:'internal_error'});
+    }
+  );
+});
