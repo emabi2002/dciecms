@@ -174,7 +174,7 @@ class JudicialPostgresRepository extends PostgresRepository {
        WHERE court_id = ANY($1::uuid[])
          AND status <> 'CANCELLED'
          AND scheduled_start >= ($2::date::timestamp AT TIME ZONE 'Pacific/Port_Moresby')
-         AND scheduled_start < ((($2::date + 1)::timestamp) AT TIME ZONE 'Pacific/Port_Moresby')
+         AND scheduled_start < (($2::date + 1)::timestamp AT TIME ZONE 'Pacific/Port_Moresby')
        ORDER BY scheduled_start ASC, courtroom ASC NULLS LAST`,
       [courtIds, date]
     );
