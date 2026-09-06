@@ -1,12 +1,23 @@
 'use strict';
 const { authorize } = require('../../../packages/rbac');
-const { NotFoundError } = require('./dciecms-service');
+const { NotFoundError, ValidationError } = require('./dciecms-service');
 const { JudicialWorkbenchService } = require('./judicial-workbench-service');
+
+const PAYMENT_STATUSES = new Set(['PENDING','CONFIRMED','FAILED','CANCELLED','REFUNDED']);
+const RECEIPT_STATUSES = new Set(['ISSUED','VOID']);
+const RECONCILIATION_STATUSES = new Set(['PREPARED','CERTIFIED','REJECTED']);
+
+function normalizeStatus(value, allowed, label) {
+  if (value === undefined || value === null || String(value).trim() === '') return null;
+  const status = String(value).trim().toUpperCase();
+  if (!allowed.has(status)) throw new ValidationError(`Invalid ${label} status`);
+  return status;
+}
 
 class FinanceOperationsService extends JudicialWorkbenchService {
   async listFinanceQueue(actor, filters = {}) {
     authorize(actor, 'finance.payment.view', {});
-    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const status = normalizeStatus(filters?.status, PAYMENT_STATUSES, 'payment');
     const rows = await this.repository.listFinanceQueue({ courtIds: actor.courtIds, status });
     this._audit(actor, 'finance.queue.view', 'finance_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
     return rows;
@@ -32,7 +43,7 @@ class FinanceOperationsService extends JudicialWorkbenchService {
 
   async listReceipts(actor, filters = {}) {
     authorize(actor, 'finance.receipt.view', {});
-    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const status = normalizeStatus(filters?.status, RECEIPT_STATUSES, 'receipt');
     const rows = await this.repository.listReceipts({ courtIds: actor.courtIds, status });
     this._audit(actor, 'finance.receipts.view', 'receipt_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
     return rows;
@@ -40,11 +51,11 @@ class FinanceOperationsService extends JudicialWorkbenchService {
 
   async listReconciliations(actor, filters = {}) {
     authorize(actor, 'finance.reconciliation.view', {});
-    const status = filters?.status ? String(filters.status).trim().toUpperCase() : null;
+    const status = normalizeStatus(filters?.status, RECONCILIATION_STATUSES, 'reconciliation');
     const rows = await this.repository.listReconciliations({ courtIds: actor.courtIds, status });
     this._audit(actor, 'finance.reconciliations.view', 'reconciliation_queue', actor.courtIds.join(','), { courtIds: actor.courtIds, status });
     return rows;
   }
 }
 
-module.exports = { FinanceOperationsService };
+module.exports = { FinanceOperationsService, normalizeStatus, PAYMENT_STATUSES, RECEIPT_STATUSES, RECONCILIATION_STATUSES };
