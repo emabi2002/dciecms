@@ -65,5 +65,7 @@ test('daily hearing list is court-scoped and resolves the requested date in PNG 
   assert.equal(rows.length,1);
   assert.match(calls[0].sql,/court_id\s*=\s*ANY/i);
   assert.match(calls[0].sql,/Pacific\/Port_Moresby/i);
+  assert.match(calls[0].sql,/\$2::date::timestamp\s+AT TIME ZONE\s+'Pacific\/Port_Moresby'/i);
+  assert.match(calls[0].sql,/\(\$2::date \+ 1\)::timestamp\s+AT TIME ZONE\s+'Pacific\/Port_Moresby'/i);
   assert.deepEqual(calls[0].params,[[COURT_A],'2026-09-07']);
 });
