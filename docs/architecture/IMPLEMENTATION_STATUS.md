@@ -5,7 +5,7 @@
 
 ## Integration status
 
-The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, and R5 durable event/outbox infrastructure. R5 extends the PostgreSQL transaction boundary to durable domain-event enqueue but does not perform any production deployment, live database migration or external provider delivery.
+The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure, and a provider-neutral production OIDC/JWT authentication boundary. The authentication boundary verifies signed bearer credentials and fails closed, but it does not register or activate a real government IdP, perform browser login, deploy production configuration, execute a live database migration or change production infrastructure.
 
 ## Delivered capabilities
 
@@ -80,6 +80,23 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - delivery contract is **at least once**; future downstream/provider handlers must be idempotent using `outbox_event_id`, the domain-event deduplication key or an equivalent provider-side mechanism
 - isolated Supabase test-profile migration `db/supabase/20260906_dciecms_test_0012.sql` and logical outbox table mapping are repository-delivered only and have not been represented as applied to a live environment
 
+### Production authentication boundary
+- explicit `DCIECMS_AUTH_MODE=development|oidc`; the server does not silently select an authentication mode
+- `NODE_ENV=production` rejects development authentication before the HTTP server can listen
+- OIDC mode requires HTTPS issuer and JWKS URLs, API audience and an explicit asymmetric signing-algorithm allow-list
+- JOSE/JWKS verification validates bearer-token signature, exact issuer, audience, expiry, not-before time, allowed signing algorithm and subject
+- verified `sub`, `roles`, `court_ids` and `explicit_grants` are type-checked before canonical actor normalization
+- unverified HTTP headers, usernames, email addresses, frontend state and token payload data are not accepted as authorization evidence
+- OIDC authentication is asynchronous and completes before application service methods execute
+- invalid/missing credentials return sanitized 401 with `WWW-Authenticate: Bearer`
+- valid identity that fails RBAC/court-scope authorization remains a 403 without an authentication challenge
+- temporary JWKS verification infrastructure failures fail closed with sanitized 503; unexpected authentication-boundary errors are sanitized as 500
+- raw bearer material and verifier internals do not propagate into the canonical application actor or HTTP error payloads
+- remote JWKS construction is reused with bounded cache/cooldown/timeout settings rather than recreated for each request
+- Court Workspace supports a provider-neutral runtime access-token provider and sends `Authorization: Bearer <token>` when supplied
+- Court Workspace suppresses all development identity headers whenever the token-provider boundary is configured, including when that provider temporarily returns no token
+- browser login/PKCE, approved government IdP registration, live issuer/JWKS configuration, production credentials and production activation remain outside this delivered boundary
+
 ## Verification controls present in the repository
 - GitHub Actions CI using Node.js 20 for the application test/build runtime
 - backend regression test execution
@@ -93,12 +110,19 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - R5 outbox regressions for idempotent enqueue, bounded/stale claims, worker ownership, retry/dead-letter transitions and dispatcher behavior
 - R5 domain-event regressions covering seven lifecycle transitions and sensitive-payload minimization
 - R5 runtime regression proving business mutation, audit evidence and outbox enqueue share one transaction/client and roll back together when the outbox write fails
+- production-authentication configuration regressions for mandatory mode selection, production/development separation, HTTPS metadata and asymmetric algorithm allow-listing
+- cryptographic authentication regressions for valid JWT mapping, invalid signature, issuer, audience, expiry, `nbf`, subject/claim-shape, disallowed algorithm and unknown key handling
+- JWKS failure-isolation regressions for timeout, transport/non-2xx failures and bounded resolver reuse
+- HTTP authentication regressions for asynchronous actor resolution and sanitized 401/403/503/500 separation
+- startup regression proving production cannot listen with development authentication mode
+- Court Workspace regressions proving runtime Bearer injection and no fallback to development identity when the token provider is configured
+- token non-propagation and response-sanitization regressions proving raw bearer material/verifier internals are not exposed
 
-These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3 and R5 Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work.
+These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3 and R5 Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work. Likewise, the production authentication verifier is repository-delivered but no real identity platform has been registered or activated.
 
 ## Intentionally outstanding / environment-dependent work
+- approved government IdP selection/registration, browser login/PKCE integration and live issuer/audience/JWKS configuration
 - approved permanent outbox worker scheduling/runtime and real idempotent provider handlers
-- production IdP/OIDC/OAuth2 gateway integration and signed-claim validation
 - approved production PostgreSQL/Supabase environment and controlled live migration execution
 - private object storage and malware scanning pipeline
 - production payment-gateway callback/integration
@@ -110,6 +134,6 @@ These controls do not by themselves constitute production deployment approval or
 
 ## Security boundary
 
-`x-dev-*` request headers are development-only scaffolding. They must never be accepted as production identity evidence. Production authentication must resolve signed, validated claims from the approved identity platform/API gateway and retain server-side permission, court, record-relationship and confidentiality enforcement.
+`x-dev-*` request headers are development-only scaffolding. They must never be accepted as production identity evidence. The production runtime now enforces OIDC bearer verification before actor construction and preserves server-side permission, court, record-relationship and confidentiality enforcement.
 
-The browser is not an authorization boundary. Registry workflow, request replay, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility must continue to be enforced by the API and database layers.
+The browser is not an authorization boundary. Registry workflow, request replay, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility continue to be enforced by the API and database layers.
