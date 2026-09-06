@@ -31,3 +31,17 @@ test('runtime service uses Judicial Workbench with judgment-capable PostgreSQL r
   assert.equal(typeof service.repository.signJudgment, 'function');
   assert.equal(typeof service.repository.listPendingJudgments, 'function');
 });
+
+test('runtime Supabase test profile maps repository SQL into dciecms_test', async () => {
+  class FakePool {
+    constructor(options) { this.options = options; this.lastSql = null; }
+    async query(text) { this.lastSql = text; return { rows: [] }; }
+    async connect() { throw new Error('not used'); }
+  }
+  const service = createRuntimeService({
+    env: { DATABASE_URL: 'postgres://example/db', DCIECMS_DB_PROFILE: 'supabase_test' },
+    PoolClass: FakePool
+  });
+  await service.repository.getCase('aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa');
+  assert.match(service.repository.db.lastSql, /FROM dciecms_test\.cases/);
+});
