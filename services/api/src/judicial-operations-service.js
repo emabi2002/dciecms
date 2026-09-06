@@ -110,6 +110,7 @@ class JudicialOperationsService extends PersistentDciecmsService {
         reason,
         nextStart,
         nextEnd,
+        nextHearingId: nextStart ? randomUUID() : null,
         actorSubject: actor.userId,
         at: new Date().toISOString()
       });
