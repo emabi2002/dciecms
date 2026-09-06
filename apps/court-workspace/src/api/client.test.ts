@@ -75,4 +75,37 @@ describe('Court Workspace API client', () => {
       'x-dev-courts': 'court-a'
     });
   });
+
+  it('adds bearer authorization from an injected access-token provider', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiRequest({ method: 'GET', path: '/registry/filings' }, {
+      accessTokenProvider: async () => 'signed-access-token'
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers).toMatchObject({ authorization: 'Bearer signed-access-token' });
+    expect(init.headers).not.toHaveProperty('x-dev-sub');
+  });
+
+  it('does not fall back to development identity when a token provider returns no token', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify([]), {
+      status: 200,
+      headers: { 'content-type': 'application/json' }
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    await apiRequest({ method: 'GET', path: '/registry/filings' }, {
+      accessTokenProvider: async () => undefined,
+      devIdentity: { enabled: true, subject: 'reg-a', roles: ['REG'], courtIds: ['COURT-A'] }
+    });
+
+    const [, init] = fetchMock.mock.calls[0];
+    expect(init.headers).not.toHaveProperty('authorization');
+    expect(init.headers).not.toHaveProperty('x-dev-sub');
+  });
 });
