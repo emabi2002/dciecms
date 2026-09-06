@@ -186,6 +186,20 @@ test('classification change is privileged, reasoned and audited', async () => {
   assert.equal(audit.events.at(-1).action,'document.classification.change');
 });
 
+test('SEALED document cannot be downgraded without sealed-document authority', async () => {
+  const {service,repository}=createFixture();
+  repository.documents.set('DOC-S',{
+    documentId:'DOC-S',filingId:'F-1',courtId:'COURT-A',status:'ACTIVE',classification:'SEALED'
+  });
+  await assert.rejects(
+    () => service.changeDocumentClassification(actor({roles:['REG-MGR']}),'DOC-S',{classification:'CONFIDENTIAL',reason:'court order'}),
+    /explicit grant|sealed/i
+  );
+  await assert.doesNotReject(
+    () => service.changeDocumentClassification(actor({roles:['REG-MGR'],grants:['document.sealed.view']}),'DOC-S',{classification:'CONFIDENTIAL',reason:'court order'})
+  );
+});
+
 test('replacement creates a new immutable version and supersede keeps prior history', async () => {
   const {service,repository}=createFixture({uuids:['DOC-2']});
   repository.documents.set('DOC-1',{
@@ -206,6 +220,20 @@ test('replacement creates a new immutable version and supersede keeps prior hist
   const superseded=await service.supersedeDocument(actor({roles:['REG-MGR']}),'DOC-1','DOC-2','corrected filing');
   assert.equal(superseded.status,'SUPERSEDED');
   assert.equal(superseded.supersededByDocumentId,'DOC-2');
+});
+
+test('supersede rejects an unrelated active document from the same filing', async () => {
+  const {service,repository}=createFixture();
+  repository.documents.set('DOC-1',{
+    documentId:'DOC-1',filingId:'F-1',courtId:'COURT-A',status:'ACTIVE',classification:'CONFIDENTIAL',versionNumber:1
+  });
+  repository.documents.set('DOC-X',{
+    documentId:'DOC-X',filingId:'F-1',courtId:'COURT-A',status:'ACTIVE',classification:'CONFIDENTIAL',versionNumber:1,priorDocumentId:null
+  });
+  await assert.rejects(
+    () => service.supersedeDocument(actor({roles:['REG-MGR']}),'DOC-1','DOC-X','replacement'),
+    /lineage|replacement/i
+  );
 });
 
 test('withdrawal requires privilege and reason; no hard-delete API exists', async () => {
