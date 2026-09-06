@@ -108,8 +108,6 @@ function createHttpApp(service, actorResolver) {
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) return send(res, 200, await service.getFiling(actor, filingGet[1]));
-      const docPost = path.match(/^\/filings\/([^/]+)\/documents$/);
-      if (req.method === 'POST' && docPost) return send(res, 201, await service.registerDocument(actor, docPost[1], await readJson(req)));
       const submitPost = path.match(/^\/filings\/([^/]+)\/submit$/);
       if (req.method === 'POST' && submitPost) { const body = await readJson(req); return send(res, 200, await service.submitFiling(actor, submitPost[1], req.headers['idempotency-key'] || body.idempotencyKey)); }
       const validatePost = path.match(/^\/filings\/([^/]+)\/validate$/);
