@@ -1,0 +1,20 @@
+[build]
+  base = "apps/court-workspace"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  VITE_DCIECMS_API_BASE_URL = "/api"
+  VITE_DCIECMS_DEV_IDENTITY = "false"
+
+[[redirects]]
+  from = "/api/*"
+  to = "/api-unavailable.html"
+  status = 404
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
