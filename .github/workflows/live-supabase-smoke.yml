@@ -50,5 +50,6 @@ jobs:
       - name: Install backend dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
+      # Verify transactional live smoke after PNG daily-list timezone correction.
       - name: Run transactional DCIECMS live smoke
         run: npm run smoke:live
