@@ -42,6 +42,33 @@ test('PostgresAuditStore validates and appends actor-subject audit evidence with
   assert.equal(db.calls[0].params.includes('reg-a'), true);
 });
 
+test('PostgresAuditStore preserves service context fields in details JSON', async () => {
+  const db = new FakeQueryable();
+  const audit = new PostgresAuditStore(db);
+
+  const record = await audit.append({
+    actorUserId: 'reg-a',
+    effectiveRoles: ['REG'],
+    action: 'filing.validate',
+    resourceType: 'filing',
+    resourceId: 'f-1',
+    courtId: '11111111-1111-1111-1111-111111111111',
+    filingId: 'f-1',
+    workflowTaskId: 'task-1',
+    caseTypeCode: 'CIVIL',
+    details: { source: 'registry' }
+  });
+
+  assert.deepEqual(record.details, {
+    filingId: 'f-1',
+    workflowTaskId: 'task-1',
+    caseTypeCode: 'CIVIL',
+    source: 'registry'
+  });
+  const persistedDetails = JSON.parse(db.calls[0].params[11]);
+  assert.deepEqual(persistedDetails, record.details);
+});
+
 test('PostgresAuditStore lists exact-match audit evidence through parameterized predicates', async () => {
   const db = new FakeQueryable([{ rows: [{
     audit_event_id: 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa',
