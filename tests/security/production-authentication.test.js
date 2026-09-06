@@ -180,3 +180,11 @@ test('remote JWKS resolver is constructed once with bounded cache settings', asy
   assert.equal(seenOptions.timeoutDuration, 5_000);
   assert.equal(typeof seenOptions[customFetch], 'function');
 });
+
+test('raw bearer token is not passed into the application actor', async () => {
+  const { resolver, sign } = await fixture();
+  const token = await sign({ roles:['REG'], court_ids:['COURT-A'] });
+  const actor = await resolver(requestWith(token));
+  assert.equal(JSON.stringify(actor).includes(token), false);
+  assert.deepEqual(Object.keys(actor).sort(), ['courtIds', 'explicitGrants', 'roles', 'userId']);
+});
