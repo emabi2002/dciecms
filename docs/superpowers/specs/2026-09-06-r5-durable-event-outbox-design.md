@@ -14,6 +14,8 @@ Add a durable PostgreSQL outbox so DCIECMS can record externally deliverable dom
 6. Successful delivery is recorded durably.
 7. Failed delivery is returned to `PENDING` with a future retry time until the maximum attempts are reached, then becomes `DEAD_LETTER`.
 8. No outbox row is deleted by normal application delivery flow.
+9. Delivery semantics are **at least once**: a handler may be invoked again if its external side effect succeeds but durable delivery acknowledgement cannot be recorded before the worker loses its lease or crashes.
+10. Every downstream/provider handler must therefore be **idempotent**, using `outbox_event_id`, the stable domain-event deduplication key, or an equivalent provider-side idempotency mechanism before performing a non-repeatable external side effect.
 
 ## Schema
 
@@ -36,6 +38,7 @@ Fields:
 - `next_attempt_at timestamptz NOT NULL DEFAULT now()`
 - `locked_at timestamptz`
 - `locked_by varchar(160)`
+- `last_attempt_at timestamptz`
 - `last_error text`
 - `created_at timestamptz NOT NULL DEFAULT now()`
 - `delivered_at timestamptz`
@@ -60,6 +63,8 @@ The isolated Supabase test profile receives `db/supabase/20260906_dciecms_test_0
 - `markFailed({ eventId, workerId, attemptedAt, error, nextAttemptAt, maxAttempts })` — increment attempts and either return to `PENDING` for retry or move to `DEAD_LETTER`; clear the lease in either case.
 - `list(filter)` — exact-match administrative/test reads; no delete API.
 
+The claim query aliases the CTE candidate identifier before `UPDATE ... FROM` so the returned outbox columns cannot collide with an identically named candidate column in PostgreSQL scope.
+
 ## OutboxDispatcher
 
 `OutboxDispatcher` performs one bounded `runOnce()` cycle:
@@ -70,20 +75,21 @@ The isolated Supabase test profile receives `db/supabase/20260906_dciecms_test_0
 4. mark delivery success or failure durably;
 5. calculate deterministic capped exponential retry delay for failures.
 
-R5 does not create a permanent scheduler/daemon. A later deployment layer can call `runOnce()` on an approved schedule or worker runtime.
+R5 does not create a permanent scheduler/daemon. A later deployment layer can call `runOnce()` on an approved schedule or worker runtime. Because the handler runs before `markDelivered`, downstream handlers must be safe under duplicate invocation.
 
 ## Domain events emitted in R5
 
-R5 initially records externally meaningful lifecycle events:
+R5 records these externally meaningful lifecycle events:
 
-- `filing.accepted`
+- `filing.submitted`
 - `payment.confirmed`
 - `case.opened`
 - `hearing.scheduled`
 - `hearing.adjourned`
+- `hearing.completed`
 - `judgment.issued`
 
-Each event uses a server-generated stable deduplication key tied to the mutation identity. Payloads contain only necessary workflow identifiers/status/court context and exclude document contents, credentials and secrets.
+Each event uses a server-generated stable deduplication key tied to the mutation identity. Payloads contain only necessary workflow identifiers/status/court context and exclude document contents, credentials and secrets. Payment events exclude the provider reference. Hearing-adjournment events exclude the free-text judicial adjournment reason; that reason remains in the authoritative hearing/audit evidence but is not copied into the generic integration payload.
 
 The service layer receives an event store with a no-op default. PostgreSQL runtime injects `PostgresOutboxStore` over the same R4 `PostgresTransactionManager`. Because event enqueue is awaited before the transaction returns, enqueue failure rolls back business mutation and audit evidence as one unit.
 
@@ -94,22 +100,25 @@ The service layer receives an event store with a no-op default. PostgreSQL runti
 - SQL remains parameterized.
 - Worker ownership is checked before delivery-state transitions.
 - Provider credentials are not stored in outbox payloads or headers.
+- Free-text judicial reasons are not copied into generic outbox payloads.
 - R5 does not send network requests to external providers.
 
 ## Verification
 
-R5 must prove:
+R5 proves:
 
 1. migration/schema constraints and Supabase isolated mapping exist;
 2. enqueue is idempotent and parameterized;
 3. claim uses due-time filtering, stale-lease recovery and `SKIP LOCKED` semantics;
-4. only the owning worker can mark delivery or failure;
-5. retries increment attempts and dead-letter at the configured limit;
-6. dispatcher success/failure/no-handler paths are deterministic;
-7. selected domain mutations enqueue the correct event and await it;
-8. PostgreSQL runtime injects the outbox store over the same transaction manager as repository/audit;
-9. outbox enqueue failure causes the enclosing business transaction to roll back;
-10. backend, Court Workspace and production frontend build regressions pass.
+4. the claim candidate ID is disambiguated from returned outbox columns;
+5. only the owning worker can mark delivery or failure;
+6. retries increment attempts and dead-letter at the configured limit;
+7. dispatcher success/failure/no-handler paths are deterministic;
+8. the seven selected domain mutations enqueue the correct event and await it;
+9. payment provider references and free-text adjournment reasons are excluded from generic event payloads;
+10. PostgreSQL runtime injects the outbox store over the same transaction manager as repository/audit;
+11. outbox enqueue failure causes the enclosing business transaction to roll back;
+12. backend, Court Workspace and production frontend build regressions pass.
 
 ## Non-goals
 
