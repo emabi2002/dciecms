@@ -54,12 +54,12 @@ test('PersistentDciecmsService delegates every secure document lifecycle operati
   await assertDelegation(service,delegate);
 });
 
-test('secure document facade methods fail closed when the secure pipeline is not configured', async()=>{
+test('secure document facade methods fail closed when the secure pipeline is not configured', ()=>{
   const inMemory=new DciecmsService();
   const persistent=new PersistentDciecmsService({repository:{}});
   for (const service of [inMemory,persistent]) {
-    await assert.rejects(
-      ()=>Promise.resolve(service.initiateDocumentUpload(ACTOR,'filing-1',{fileName:'claim.pdf'})),
+    assert.throws(
+      ()=>service.initiateDocumentUpload(ACTOR,'filing-1',{fileName:'claim.pdf'}),
       /secure document pipeline is not configured/i
     );
   }
