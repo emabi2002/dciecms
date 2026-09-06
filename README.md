@@ -4,13 +4,13 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, and a provider-neutral production OIDC/JWT authentication boundary. No real government IdP, production credential, live database migration or production deployment is implied by this repository state.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, a provider-neutral production OIDC/JWT authentication boundary, and a provider-neutral secure document pipeline. No real government IdP, production storage/scanner provider, production credential, live database migration or production deployment is implied by this repository state.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
 - party creation and filing drafts
 - controlled case-type validation
-- secure document registration in `QUARANTINED` state with SHA-256 validation
+- legacy document metadata registration in `QUARANTINED` state with SHA-256 validation
 - idempotent filing submission
 - court-scoped Registry queue
 - Registry validation workflow task creation/completion
@@ -85,12 +85,31 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - when a Court Workspace token provider is configured, development identity headers are suppressed even when no token is temporarily available
 - no browser login/PKCE flow, real government IdP registration, live issuer/JWKS metadata, client credentials or production activation is included in this repository baseline
 
+### Secure document pipeline capabilities
+- migration `0013_secure_document_pipeline.sql` extends document lifecycle evidence for private storage, upload finalization, malware scanning, immutable version lineage, withdrawal, legal hold and governed disposition eligibility
+- server-generated document IDs and quarantine object keys; callers cannot choose storage keys, storage URLs or signed grant URLs
+- provider-neutral short-lived upload grants bound to one exact private quarantine object
+- authoritative finalization reads storage metadata and validates exact expected size, SHA-256 checksum and detected MIME type; caller-supplied finalization integrity evidence is not trusted
+- durable malware-scan jobs use bounded attempts, leases, stale-lease recovery, deterministic retry and dead-letter handling
+- only a normalized `CLEAN` scan result for the exact `QUARANTINED` record can transition the document to `ACTIVE`
+- infected, unsupported, scanner-error and malformed scanner outcomes fail closed and never make a document downloadable
+- active-document downloads require base RBAC/court scope, filing-record relationship, document classification authority and a released `ACTIVE` lifecycle state
+- `PUBLIC` actors are restricted to their own filing relationship even when another filer's document is in the same court
+- `RESTRICTED` and `SEALED` documents require their corresponding explicit document grants in addition to base `document.view` authority and court scope
+- provider-neutral short-lived download grants are returned only after authorization and are never persisted in document metadata or audit evidence
+- replacement creates a new immutable version; supersede and withdraw preserve prior history; the normal document service exposes no hard-delete operation
+- legal hold is a fail-closed veto on governed disposition eligibility
+- document mutations and application audit evidence share the outer PostgreSQL transaction; finalization and scan-job creation also roll back together on failure
+- production defaults the document pipeline to disabled; production cannot select development adapters; enabled production mode requires approved injected private/encrypted storage and malware-scanner adapters
+- repository code does **not** select or activate a real storage provider, bucket, KMS key, malware-scanner provider, provider credential, permanent scan-worker schedule or production deployment
+
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
 - live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
-- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`) and R5 (`db/supabase/20260906_dciecms_test_0012.sql`); their presence does not mean they have been executed against any live environment
+- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`), R5 (`db/supabase/20260906_dciecms_test_0012.sql`) and the secure document pipeline (`db/supabase/20260907_dciecms_test_0013.sql`); their presence does not mean they have been executed against any live environment
 - production-authentication regressions cover invalid signature, issuer, audience, time validity, subject/claim shape, signing algorithm, unknown keys, JWKS failure isolation, startup fail-closed behavior, token non-propagation, sanitized 401/503/500 behavior and 401/403 separation
-- production deployment is not implied by the presence of deployment, migration, authentication, outbox or smoke-test tooling
+- secure-document regressions cover caller-controlled object-key rejection, authoritative integrity validation, CLEAN-only release, cross-court and cross-filer isolation, RESTRICTED/SEALED grant enforcement, signed-grant non-persistence, scan failure isolation, immutable versioning, no hard-delete path, legal-hold veto and provider/scanner diagnostic sanitization
+- production deployment is not implied by the presence of deployment, migration, authentication, document-storage, scanner, outbox or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -125,10 +144,10 @@ npm install
 npm test
 ```
 
-Start the local API with the authentication mode explicitly selected:
+Start the local API with the authentication and secure-document development modes explicitly selected:
 
 ```bash
-DCIECMS_AUTH_MODE=development PORT=3000 npm start
+DCIECMS_AUTH_MODE=development DCIECMS_DOCUMENT_PIPELINE_MODE=development PORT=3000 npm start
 ```
 
 The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is required. Development identity headers are emitted only when `VITE_DCIECMS_DEV_IDENTITY=true`; that mechanism remains development scaffolding and is not production authentication. Production bearer tokens are supplied at runtime through the API client's access-token-provider seam, not through a `VITE_*` token value.
@@ -137,6 +156,8 @@ The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is req
 
 The `x-dev-*` request headers are development-only scaffolding. They are **not production authentication**, and production runtime configuration cannot select development authentication mode. OIDC mode accepts bearer credentials only after signature, issuer, audience, time-validity, subject and allowed-algorithm verification through the configured JWKS boundary.
 
-The browser is not an authorization boundary. Court scope, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
+The secure document development adapters are also development/test scaffolding. Production defaults the pipeline to disabled and must fail closed unless explicitly enabled with approved private encrypted storage and malware-scanner adapters. Signed upload/download grants, storage/scanner credentials and raw provider diagnostics must not be persisted in document metadata, audit/outbox evidence, source control or HTTP errors.
 
-Real government IdP registration/browser login, private object storage, malware scanning, external payment-gateway callbacks, email/SMS providers, government-agency integrations, permanent outbox worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
+The browser is not an authorization boundary. Court scope, record relationship, document confidentiality, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
+
+Real government IdP registration/browser login, production object-storage/KMS selection and provisioning, production malware-scanner integration, external payment-gateway callbacks, email/SMS providers, government-agency integrations, permanent outbox/scan-worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, live migration execution, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
