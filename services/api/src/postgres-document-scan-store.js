@@ -59,6 +59,14 @@ class PostgresDocumentScanStore {
     this.db = queryable;
   }
 
+  async getByDocumentId(documentId) {
+    const id = requiredText(documentId, 'documentId');
+    const result = await this.db.query(`SELECT ${SCAN_JOB_COLUMNS}
+      FROM documents.scan_jobs
+      WHERE document_id=$1`, [id]);
+    return mapScanJob(result.rows[0]);
+  }
+
   async claimDue({ workerId, limit = 10, leaseSeconds = 60, now = new Date().toISOString() } = {}) {
     const owner = requiredText(workerId, 'workerId');
     if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new TypeError('limit must be an integer between 1 and 100');
