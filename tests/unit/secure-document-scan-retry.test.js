@@ -25,7 +25,7 @@ test('retryDocumentScan requeues only the document dead-letter job and audits no
   };
   const repository={
     async getDocument(id){ return id==='DOC-1' ? document : null; },
-    async getFiling(){ return null; }
+    async getFiling(id){ return id==='F-1' ? {filingId:'F-1',courtId:'COURT-A',createdBy:'owner-a',status:'DRAFT'} : null; }
   };
   const scanStore={
     calls:[],
