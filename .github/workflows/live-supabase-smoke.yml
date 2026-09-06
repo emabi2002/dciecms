@@ -36,6 +36,7 @@ jobs:
             exit 1
           fi
 
+      # Touch this workflow to trigger a feature-branch live smoke after secret rotation.
       - name: Install backend dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
