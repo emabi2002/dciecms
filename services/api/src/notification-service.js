@@ -1,5 +1,5 @@
 'use strict';
-const { randomUUID } = require('node:crypto');
+const { randomUUID, createHash } = require('node:crypto');
 const { AccessDeniedError } = require('../../../packages/rbac');
 const { ValidationError, NotFoundError } = require('./dciecms-service');
 const { FinanceOperationsService } = require('./finance-operations-service');
@@ -21,7 +21,22 @@ function normalizeOptionalFilter(value, allowed, label) {
   return normalized;
 }
 
+function notificationIdempotencyKey({ eventType, resourceId, recipient, channel }) {
+  const canonical = [
+    String(eventType || '').trim().toLowerCase(),
+    String(resourceId || '').trim(),
+    String(recipient || '').trim().toLowerCase(),
+    String(channel || '').trim().toUpperCase()
+  ].join('|');
+  return createHash('sha256').update(canonical).digest('hex');
+}
+
 class NotificationService extends FinanceOperationsService {
+  constructor({ repository, auditStore, recipientResolver = null } = {}) {
+    super({ repository, auditStore });
+    this.recipientResolver = recipientResolver;
+  }
+
   async queueNotification(actor, input = {}) {
     const courtId = requireText(input.courtId, 'Court');
     if (!actor?.courtIds?.includes(courtId)) throw new AccessDeniedError(`Access denied outside court scope: ${courtId}`);
@@ -31,6 +46,7 @@ class NotificationService extends FinanceOperationsService {
     const templateCode = requireText(input.templateCode, 'Template code');
     const eventType = requireText(input.eventType, 'Event type');
     const resourceId = requireText(input.resourceId, 'Resource id');
+    const idempotencyKey = notificationIdempotencyKey({ eventType, resourceId, recipient, channel });
     const createdAt = new Date().toISOString();
     const row = await this.repository.createNotification({
       notificationId: randomUUID(),
@@ -40,11 +56,26 @@ class NotificationService extends FinanceOperationsService {
       templateCode,
       eventType,
       resourceId,
+      idempotencyKey,
       createdBy: actor.userId,
       createdAt
     });
-    this._audit(actor, 'notification.queued', 'notification', row.notificationId, { courtId, channel, eventType, resourceId });
+    this._audit(actor, 'notification.queued', 'notification', row.notificationId, { courtId, channel, eventType, resourceId, idempotencyKey });
     return row;
+  }
+
+  async _queueWorkflowNotification(actor, event = {}) {
+    if (typeof this.recipientResolver !== 'function') return null;
+    const target = await this.recipientResolver(event);
+    if (!target?.channel || !target?.recipient) return null;
+    return this.queueNotification(actor, {
+      courtId: event.courtId,
+      channel: target.channel,
+      recipient: target.recipient,
+      templateCode: event.templateCode,
+      eventType: event.eventType,
+      resourceId: event.resourceId
+    });
   }
 
   async listNotifications(actor, filters = {}) {
@@ -76,4 +107,4 @@ class NotificationService extends FinanceOperationsService {
   }
 }
 
-module.exports = { NotificationService, CHANNELS, NOTIFICATION_STATUSES, DELIVERY_OUTCOMES };
+module.exports = { NotificationService, notificationIdempotencyKey, CHANNELS, NOTIFICATION_STATUSES, DELIVERY_OUTCOMES };
