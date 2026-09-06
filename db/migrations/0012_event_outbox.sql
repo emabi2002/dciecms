@@ -18,6 +18,7 @@ CREATE TABLE IF NOT EXISTS integration.outbox_events (
   next_attempt_at timestamptz NOT NULL DEFAULT now(),
   locked_at timestamptz,
   locked_by varchar(160),
+  last_attempt_at timestamptz,
   last_error text,
   created_at timestamptz NOT NULL DEFAULT now(),
   delivered_at timestamptz,
