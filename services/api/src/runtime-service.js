@@ -1,6 +1,6 @@
 'use strict';
 const { DciecmsService } = require('./dciecms-service');
-const { JudicialOperationsService } = require('./judicial-operations-service');
+const { JudicialWorkbenchService } = require('./judicial-workbench-service');
 const { JudgmentPostgresRepository } = require('./judgment-postgres-repository');
 const { createPostgresPool } = require('./postgres-runtime');
 
@@ -9,7 +9,7 @@ function createRuntimeService({ env = process.env, PoolClass } = {}) {
   if (!connectionString) return new DciecmsService();
   const pool = createPostgresPool({ connectionString, PoolClass });
   const repository = new JudgmentPostgresRepository(pool);
-  return new JudicialOperationsService({ repository });
+  return new JudicialWorkbenchService({ repository });
 }
 
 module.exports = { createRuntimeService };
