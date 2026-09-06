@@ -15,8 +15,8 @@ const ROLE_PERMISSIONS = Object.freeze({
   'PUBLIC': new Set(['party.create','party.view','filing.create','filing.view','filing.edit','filing.submit','document.upload','document.view']),
   'ICT-ADMIN': new Set(['user.create','user.disable','system.health.view','integration.manage']),
   'SEC-ADMIN': new Set(['user.create','user.disable','role.assign','permission.manage','access.grant','access.review','audit.view','security.alert.manage']),
-  'MAG': new Set(['filing.view','case.view','document.view','judgment.create','judgment.review','judgment.sign','judgment.issue']),
-  'CMAG': new Set(['filing.view','case.view','document.view','judgment.create','judgment.review','judgment.sign','judgment.issue','case.assign'])
+  'MAG': new Set(['filing.view','case.view','document.view','hearing.view','hearing.schedule','hearing.adjourn','judgment.create','judgment.review','judgment.sign','judgment.issue']),
+  'CMAG': new Set(['filing.view','case.view','document.view','hearing.view','hearing.schedule','hearing.adjourn','judgment.create','judgment.review','judgment.sign','judgment.issue','case.assign'])
 });
 
 function hasPermission(actor, permission) {
