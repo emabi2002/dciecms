@@ -102,3 +102,34 @@ test('PostgresRepository replays a durable filing submission response without re
   assert.equal(calls.at(-2).text, 'COMMIT');
   assert.equal(calls.at(-1).text, 'RELEASE');
 });
+
+test('PostgresRepository rolls back the idempotency claim when filing submission cannot transition', async () => {
+  const calls = [];
+  const client = {
+    async query(text, params = []) {
+      calls.push({ text, params });
+      if (/INSERT INTO workflow\.idempotency_records/i.test(text)) return { rows: [{ idempotency_record_id: 'idem-1' }] };
+      if (/UPDATE registry\.filings/i.test(text)) return { rows: [] };
+      return { rows: [] };
+    },
+    release() { calls.push({ text: 'RELEASE', params: [] }); }
+  };
+  const repo = new PostgresRepository({ async connect() { return client; } });
+
+  await assert.rejects(
+    () => repo.submitFilingIdempotent({
+      filingId: 'f-1',
+      taskId: 't-1',
+      actorSubject: 'reg-a',
+      submittedAt: '2026-09-06T00:10:00.000Z',
+      idempotencyKey: 'req-123'
+    }),
+    error => error && error.code === 'FILING_STATE_CONFLICT'
+  );
+
+  assert.equal(calls.filter(call => /INSERT INTO workflow\.workflow_tasks/i.test(call.text)).length, 0);
+  assert.equal(calls.filter(call => /UPDATE workflow\.idempotency_records/i.test(call.text)).length, 0);
+  assert.equal(calls.some(call => call.text === 'COMMIT'), false);
+  assert.equal(calls.at(-2).text, 'ROLLBACK');
+  assert.equal(calls.at(-1).text, 'RELEASE');
+});
