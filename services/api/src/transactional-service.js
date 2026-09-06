@@ -1,6 +1,6 @@
 'use strict';
 
-const MUTATING_SERVICE_METHODS = new Set([
+const MUTATING_SERVICE_METHODS = Object.freeze([
   'createParty',
   'createFilingDraft',
   'registerDocument',
@@ -29,6 +29,7 @@ const MUTATING_SERVICE_METHODS = new Set([
   'signJudgment',
   'issueJudgment'
 ]);
+const MUTATING_SERVICE_METHOD_SET = new Set(MUTATING_SERVICE_METHODS);
 
 function createTransactionalService(service, transactionManager) {
   if (!service) throw new TypeError('createTransactionalService requires a service');
@@ -41,7 +42,7 @@ function createTransactionalService(service, transactionManager) {
       const value = Reflect.get(target, property, receiver);
       if (typeof value !== 'function') return value;
 
-      if (typeof property === 'string' && MUTATING_SERVICE_METHODS.has(property)) {
+      if (typeof property === 'string' && MUTATING_SERVICE_METHOD_SET.has(property)) {
         return (...args) => transactionManager.withTransaction(() => value.apply(target, args));
       }
 
