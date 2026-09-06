@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const { DciecmsService } = require('../../services/api/src/dciecms-service');
 const { JudicialWorkbenchService } = require('../../services/api/src/judicial-workbench-service');
 const { FinanceOperationsService } = require('../../services/api/src/finance-operations-service');
-const { FinanceOperationsPostgresRepository } = require('../../services/api/src/finance-operations-postgres-repository');
+const { NotificationService } = require('../../services/api/src/notification-service');
+const { NotificationPostgresRepository } = require('../../services/api/src/notification-postgres-repository');
 const { createRuntimeService } = require('../../services/api/src/runtime-service');
 
 test('runtime service uses in-memory implementation when DATABASE_URL is absent', () => {
@@ -12,16 +13,17 @@ test('runtime service uses in-memory implementation when DATABASE_URL is absent'
   assert.ok(service instanceof DciecmsService);
 });
 
-test('runtime service layers R3 finance operations over the existing Judicial Workbench when DATABASE_URL is present', () => {
+test('runtime service layers notifications over R3 finance and the existing Judicial Workbench when DATABASE_URL is present', () => {
   class FakePool {
     constructor(options) { this.options = options; }
     async query() { return { rows: [] }; }
     async connect() { throw new Error('not used by constructor'); }
   }
   const service = createRuntimeService({ env: { DATABASE_URL: 'postgres://example/db' }, PoolClass: FakePool });
+  assert.ok(service instanceof NotificationService);
   assert.ok(service instanceof FinanceOperationsService);
   assert.ok(service instanceof JudicialWorkbenchService);
-  assert.ok(service.repository instanceof FinanceOperationsPostgresRepository);
+  assert.ok(service.repository instanceof NotificationPostgresRepository);
   assert.equal(service.repository.db.options.connectionString, 'postgres://example/db');
   assert.equal(typeof service.assignCase, 'function');
   assert.equal(typeof service.listMyCases, 'function');
@@ -32,9 +34,14 @@ test('runtime service layers R3 finance operations over the existing Judicial Wo
   assert.equal(typeof service.listPendingDecisions, 'function');
   assert.equal(typeof service.listFinanceQueue, 'function');
   assert.equal(typeof service.getPaymentDetail, 'function');
+  assert.equal(typeof service.queueNotification, 'function');
+  assert.equal(typeof service.listNotifications, 'function');
+  assert.equal(typeof service.recordDeliveryAttempt, 'function');
   assert.equal(typeof service.repository.signJudgment, 'function');
   assert.equal(typeof service.repository.listPendingJudgments, 'function');
   assert.equal(typeof service.repository.listFinanceQueue, 'function');
+  assert.equal(typeof service.repository.createNotification, 'function');
+  assert.equal(typeof service.repository.recordDeliveryAttempt, 'function');
 });
 
 test('runtime Supabase test profile maps repository SQL into dciecms_test', async () => {
