@@ -187,12 +187,20 @@ export function listMyCases(config?: ApiClientConfig, signal?: AbortSignal) {
   return apiRequest<CaseRecord[]>({ method: 'GET', path: '/judicial/my-cases', signal }, config);
 }
 
+export function getJudicialCase(caseId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<CaseRecord>({ method: 'GET', path: `/judicial/cases/${id(caseId)}`, signal }, config);
+}
+
 export function assignCase(caseId: string, assigneeSubject: string, config?: ApiClientConfig) {
   return apiRequest<CaseRecord>({ method: 'POST', path: `/cases/${id(caseId)}/assign`, body: { assigneeSubject } }, config);
 }
 
 export function listDailyHearings(date: string, config?: ApiClientConfig, signal?: AbortSignal) {
   return apiRequest<HearingRecord[]>({ method: 'GET', path: `/judicial/daily-list?date=${encodeURIComponent(date)}`, signal }, config);
+}
+
+export function getJudicialHearing(hearingId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<HearingRecord>({ method: 'GET', path: `/judicial/hearings/${id(hearingId)}`, signal }, config);
 }
 
 export function scheduleHearing(
@@ -241,6 +249,14 @@ export function createJudgment(
   config?: ApiClientConfig
 ) {
   return apiRequest<JudgmentRecord>({ method: 'POST', path: `/cases/${id(caseId)}/judgments`, body: input }, config);
+}
+
+export function getJudgment(judgmentId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<JudgmentRecord>({ method: 'GET', path: `/judicial/judgments/${id(judgmentId)}`, signal }, config);
+}
+
+export function listPendingDecisions(config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<JudgmentRecord[]>({ method: 'GET', path: '/judicial/pending-decisions', signal }, config);
 }
 
 export function updateJudgmentDraft(
