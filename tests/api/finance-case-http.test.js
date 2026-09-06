@@ -41,3 +41,29 @@ test('HTTP exposes controlled case opening after payment confirmation',async()=>
     assert.equal(body.status,'AWAITING_ASSIGNMENT');
   });
 });
+
+test('HTTP exposes R3 finance read queues and payment detail with status filters',async()=>{
+  const calls=[];
+  const service={
+    async listFinanceQueue(_a,filters){calls.push(['payments',filters]);return [{paymentId:'p-1',status:'PENDING'}];},
+    async getPaymentDetail(_a,id){calls.push(['detail',id]);return {payment:{paymentId:id,status:'CONFIRMED'},receipt:null,reconciliation:null};},
+    async listReceipts(_a,filters){calls.push(['receipts',filters]);return [{receiptId:'r-1',status:'ISSUED'}];},
+    async listReconciliations(_a,filters){calls.push(['reconciliations',filters]);return [{reconciliationId:'rec-1',status:'PREPARED'}];}
+  };
+  await withService(service,async base=>{
+    let res=await fetch(base+'/finance/payments?status=pending',{headers:{'x-dev-roles':'FIN'}});
+    assert.equal(res.status,200); assert.equal((await res.json())[0].paymentId,'p-1');
+    res=await fetch(base+'/finance/payments/p-1',{headers:{'x-dev-roles':'FIN'}});
+    assert.equal(res.status,200); assert.equal((await res.json()).payment.paymentId,'p-1');
+    res=await fetch(base+'/finance/receipts?status=issued',{headers:{'x-dev-roles':'FIN'}});
+    assert.equal(res.status,200); assert.equal((await res.json())[0].receiptId,'r-1');
+    res=await fetch(base+'/finance/reconciliations?status=prepared',{headers:{'x-dev-roles':'FIN-MGR'}});
+    assert.equal(res.status,200); assert.equal((await res.json())[0].reconciliationId,'rec-1');
+  });
+  assert.deepEqual(calls,[
+    ['payments',{status:'pending'}],
+    ['detail','p-1'],
+    ['receipts',{status:'issued'}],
+    ['reconciliations',{status:'prepared'}]
+  ]);
+});
