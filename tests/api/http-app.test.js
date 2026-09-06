@@ -117,7 +117,7 @@ test('finance endpoints expose assessment, pending payment and controlled confir
 
 test('ICT admin receives 403 on registry queue without metadata leakage',async()=>withServer(async(base)=>{
   const res=await fetch(base+'/registry/filings',{headers:{'x-dev-sub':'ict','x-dev-roles':'ICT-ADMIN','x-dev-courts':'COURT-A'}});
-  assert.equal(res.status,403); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
+  assert.equal(res.status,403); assert.equal(res.headers.get('www-authenticate'),null); const body=await res.json(); assert.equal(body.error,'forbidden'); assert.equal(Object.keys(body).includes('resourceId'),false);
 }));
 
 test('unknown route returns 404',async()=>withServer(async(base)=>{ const res=await fetch(base+'/missing',{headers:hdr}); assert.equal(res.status,404); }));
@@ -139,6 +139,26 @@ test('authentication failure returns sanitized 401 bearer challenge',async()=>{
       assert.equal(response.status,401);
       assert.equal(response.headers.get('www-authenticate'),'Bearer');
       assert.deepEqual(await response.json(),{error:'unauthorized'});
+    }
+  );
+});
+
+test('authentication error response never echoes bearer material or verifier detail',async()=>{
+  const sentinel='TOKEN_SENTINEL_DO_NOT_LEAK';
+  await withResolver(
+    async req=>{
+      throw new AuthenticationError(`invalid ${req.headers.authorization} verifier-internal-detail`);
+    },
+    {},
+    async base=>{
+      const response=await fetch(`${base}/registry/filings`,{
+        headers:{authorization:`Bearer ${sentinel}`}
+      });
+      const text=await response.text();
+      assert.equal(response.status,401);
+      assert.equal(response.headers.get('www-authenticate'),'Bearer');
+      assert.equal(text.includes(sentinel),false);
+      assert.equal(text.includes('verifier-internal-detail'),false);
     }
   );
 });
