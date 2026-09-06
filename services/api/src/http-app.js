@@ -41,6 +41,7 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/finance/payments') return send(res, 200, await service.listFinanceQueue(actor, { status: url.searchParams.get('status') }));
       if (req.method === 'GET' && path === '/finance/receipts') return send(res, 200, await service.listReceipts(actor, { status: url.searchParams.get('status') }));
       if (req.method === 'GET' && path === '/finance/reconciliations') return send(res, 200, await service.listReconciliations(actor, { status: url.searchParams.get('status') }));
+      if (req.method === 'GET' && path === '/notifications') return send(res, 200, await service.listNotifications(actor, { status: url.searchParams.get('status'), channel: url.searchParams.get('channel') }));
 
       const financePaymentGet = path.match(/^\/finance\/payments\/([^/]+)$/);
       if (req.method === 'GET' && financePaymentGet) return send(res, 200, await service.getPaymentDetail(actor, financePaymentGet[1]));
