@@ -40,19 +40,37 @@ class PostgresAuditStore {
     if (!event?.action) throw new Error('Audit action is required');
     if (!event?.resourceType) throw new Error('Audit resourceType is required');
 
+    const {
+      actorUserId,
+      effectiveRoles = [],
+      action,
+      resourceType,
+      resourceId = null,
+      courtId = null,
+      correlationId = null,
+      reason = null,
+      approvalReference = null,
+      details: explicitDetails = {},
+      ...contextDetails
+    } = event;
+    const details = {
+      ...contextDetails,
+      ...(explicitDetails && typeof explicitDetails === 'object' && !Array.isArray(explicitDetails) ? explicitDetails : {})
+    };
+
     const record = freezeClone({
       auditEventId: randomUUID(),
       eventTime: new Date().toISOString(),
-      actorUserId: event.actorUserId,
-      effectiveRoles: event.effectiveRoles || [],
-      action: event.action,
-      resourceType: event.resourceType,
-      resourceId: event.resourceId || null,
-      courtId: event.courtId || null,
-      correlationId: event.correlationId || null,
-      reason: event.reason || null,
-      approvalReference: event.approvalReference || null,
-      details: event.details || {}
+      actorUserId,
+      effectiveRoles,
+      action,
+      resourceType,
+      resourceId,
+      courtId,
+      correlationId,
+      reason,
+      approvalReference,
+      details
     });
 
     await this.db.query(`INSERT INTO audit.audit_events (
