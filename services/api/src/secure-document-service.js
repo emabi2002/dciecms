@@ -163,10 +163,15 @@ class SecureDocumentService {
     }
   }
 
+  _authorizeTargetClassification(actor, courtId, classification) {
+    authorizeDocumentClassification(actor, { courtId, classification }, 'view');
+  }
+
   _authorizeInitialClassification(actor, courtId, classification) {
     const requested = requestedClassification(classification);
     if (requested && requested !== 'CONFIDENTIAL') {
       authorize(actor, 'document.classification.change', { courtId });
+      this._authorizeTargetClassification(actor, courtId, requested);
     }
     return requested || 'CONFIDENTIAL';
   }
@@ -177,6 +182,7 @@ class SecureDocumentService {
     const target = requested || originalClassification;
     if (target !== originalClassification) {
       authorize(actor, 'document.classification.change', { courtId: original.courtId });
+      this._authorizeTargetClassification(actor, original.courtId, target);
     }
     return target;
   }
@@ -188,6 +194,11 @@ class SecureDocumentService {
     }
     this._assertPublicFilingRelationship(actor, filing);
     return filing;
+  }
+
+  async _authorizeExistingDocument(actor, document) {
+    await this._filingRelationshipForDocument(actor, document);
+    authorizeDocumentClassification(actor, document, 'view');
   }
 
   async _initiate(actor, filing, input, { versionNumber = 1, priorDocumentId = null, action = 'document.upload.initiate' } = {}) {
@@ -287,8 +298,7 @@ class SecureDocumentService {
   async authorizeDocumentDownload(actor, documentId) {
     const document = await this._document(documentId);
     authorize(actor, 'document.view', { courtId: document.courtId });
-    await this._filingRelationshipForDocument(actor, document);
-    authorizeDocumentClassification(actor, document, 'view');
+    await this._authorizeExistingDocument(actor, document);
     if (document.status !== 'ACTIVE' || !document.storageObjectKey || !document.releasedAt) {
       throw new SecureDocumentConflictError('Document is not ACTIVE and released for download');
     }
@@ -309,13 +319,13 @@ class SecureDocumentService {
     requiredServiceDependency(this.repository, 'changeDocumentClassification', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.classification.change', { courtId: document.courtId });
-    await this._filingRelationshipForDocument(actor, document);
-    authorizeDocumentClassification(actor, document, 'view');
+    await this._authorizeExistingDocument(actor, document);
     requiredReason(reason);
     const target = String(classification || '').trim().toUpperCase();
     if (!DEFAULT_DOCUMENT_POLICY.classifications.includes(target)) {
       throw new DocumentPolicyError('Document classification is not allowed');
     }
+    this._authorizeTargetClassification(actor, document.courtId, target);
     let changed;
     try {
       changed = await this.repository.changeDocumentClassification({ documentId, classification: target });
@@ -353,6 +363,8 @@ class SecureDocumentService {
     const original = await this._document(documentId);
     const replacement = await this._document(replacementDocumentId);
     authorize(actor, 'document.supersede', { courtId: original.courtId });
+    await this._authorizeExistingDocument(actor, original);
+    await this._authorizeExistingDocument(actor, replacement);
     requiredReason(reason);
     if (original.documentId === replacement.documentId ||
         original.courtId !== replacement.courtId ||
@@ -378,6 +390,7 @@ class SecureDocumentService {
     requiredServiceDependency(this.repository, 'withdrawDocument', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.withdraw', { courtId: document.courtId });
+    await this._authorizeExistingDocument(actor, document);
     const normalizedReason = requiredReason(reason);
     let withdrawn;
     try {
@@ -397,6 +410,7 @@ class SecureDocumentService {
   async retryDocumentScan(actor, documentId) {
     const document = await this._document(documentId);
     authorize(actor, 'document.scan.retry', { courtId: document.courtId });
+    await this._authorizeExistingDocument(actor, document);
     requiredServiceDependency(this.scanStore, 'getByDocumentId', 'scanStore');
     requiredServiceDependency(this.scanStore, 'retryDeadLetter', 'scanStore');
     const job = await this.scanStore.getByDocumentId(document.documentId);
