@@ -1,7 +1,7 @@
 'use strict';
 const { DciecmsService } = require('./dciecms-service');
-const { FinanceOperationsService } = require('./finance-operations-service');
-const { FinanceOperationsPostgresRepository } = require('./finance-operations-postgres-repository');
+const { NotificationService } = require('./notification-service');
+const { NotificationPostgresRepository } = require('./notification-postgres-repository');
 const { createPostgresPool } = require('./postgres-runtime');
 const { createMappedDatabase } = require('./postgres-schema-mapping');
 
@@ -10,8 +10,8 @@ function createRuntimeService({ env = process.env, PoolClass } = {}) {
   if (!connectionString) return new DciecmsService();
   const pool = createPostgresPool({ connectionString, PoolClass });
   const database = createMappedDatabase(pool, String(env.DCIECMS_DB_PROFILE || 'logical').trim());
-  const repository = new FinanceOperationsPostgresRepository(database);
-  return new FinanceOperationsService({ repository });
+  const repository = new NotificationPostgresRepository(database);
+  return new NotificationService({ repository });
 }
 
 module.exports = { createRuntimeService };
