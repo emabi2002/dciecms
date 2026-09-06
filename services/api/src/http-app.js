@@ -46,6 +46,9 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/judicial/my-cases') {
         return send(res, 200, await service.listMyCases(actor));
       }
+      if (req.method === 'GET' && path === '/judicial/daily-list') {
+        return send(res, 200, await service.listDailyHearings(actor, { date: url.searchParams.get('date') }));
+      }
 
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) {
@@ -117,6 +120,14 @@ function createHttpApp(service, actorResolver) {
       const assignCasePost = path.match(/^\/cases\/([^/]+)\/assign$/);
       if (req.method === 'POST' && assignCasePost) {
         return send(res, 200, await service.assignCase(actor, assignCasePost[1], await readJson(req)));
+      }
+      const createHearingPost = path.match(/^\/cases\/([^/]+)\/hearings$/);
+      if (req.method === 'POST' && createHearingPost) {
+        return send(res, 201, await service.scheduleHearing(actor, createHearingPost[1], await readJson(req)));
+      }
+      const adjournHearingPost = path.match(/^\/hearings\/([^/]+)\/adjourn$/);
+      if (req.method === 'POST' && adjournHearingPost) {
+        return send(res, 200, await service.adjournHearing(actor, adjournHearingPost[1], await readJson(req)));
       }
       return send(res, 404, { error: 'not_found' });
     } catch (error) {
