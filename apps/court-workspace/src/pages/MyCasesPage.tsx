@@ -33,7 +33,7 @@ export function MyCasesPage() {
       <h2 id="my-cases-heading">My Cases</h2>
       <p>Cases currently assigned to your judicial work queue.</p>
 
-      {loading && <LoadingState label="Loading assigned cases" />}
+      {loading && <LoadingState message="Loading assigned cases" />}
       {error && <StatusMessage kind="error" message={error} />}
 
       {!loading && !error && cases.length === 0 && (
