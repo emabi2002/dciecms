@@ -1,8 +1,9 @@
 'use strict';
 const { JudgmentPostgresRepository } = require('./judgment-postgres-repository');
-const { mapReconciliation } = require('./postgres-repository');
+const { mapReceipt, mapReconciliation } = require('./postgres-repository');
 
 const PAYMENT_COLUMNS = `payment_id,assessment_id,court_id,amount_minor,currency,status,provider_reference,created_by_subject,created_at,confirmed_by_subject,confirmed_at`;
+const RECEIPT_COLUMNS = `receipt_id,receipt_number,payment_id,court_id,amount_minor,currency,status,issued_by_subject,issued_at`;
 const RECONCILIATION_COLUMNS = `reconciliation_id,payment_id,court_id,status,prepared_by_subject,prepared_at,certified_by_subject,certified_at`;
 
 function mapPayment(row) {
@@ -34,6 +35,32 @@ class FinanceOperationsPostgresRepository extends JudgmentPostgresRepository {
       params
     );
     return result.rows.map(mapPayment);
+  }
+
+  async listReceipts({ courtIds, status = null }) {
+    const statusFilter = status ? ' AND status = $2' : '';
+    const params = status ? [courtIds, status] : [courtIds];
+    const result = await this.db.query(
+      `SELECT ${RECEIPT_COLUMNS}
+       FROM finance.receipts
+       WHERE court_id = ANY($1::uuid[])${statusFilter}
+       ORDER BY issued_at DESC, receipt_id`,
+      params
+    );
+    return result.rows.map(mapReceipt);
+  }
+
+  async listReconciliations({ courtIds, status = null }) {
+    const statusFilter = status ? ' AND status = $2' : '';
+    const params = status ? [courtIds, status] : [courtIds];
+    const result = await this.db.query(
+      `SELECT ${RECONCILIATION_COLUMNS}
+       FROM finance.reconciliations
+       WHERE court_id = ANY($1::uuid[])${statusFilter}
+       ORDER BY prepared_at DESC, reconciliation_id`,
+      params
+    );
+    return result.rows.map(mapReconciliation);
   }
 
   async getReconciliationByPayment(paymentId) {
