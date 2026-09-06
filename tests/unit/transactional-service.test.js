@@ -40,6 +40,12 @@ test('transactional service registry contains every current HTTP mutation method
   assert.deepEqual([...MUTATING_SERVICE_METHODS].sort(), [...expectedMutations].sort());
 });
 
+test('transactional service registry is immutable to application callers', () => {
+  assert.equal(Object.isFrozen(MUTATING_SERVICE_METHODS), true);
+  assert.throws(() => MUTATING_SERVICE_METHODS.push('listRegistryQueue'), TypeError);
+  assert.deepEqual([...MUTATING_SERVICE_METHODS].sort(), [...expectedMutations].sort());
+});
+
 test('createTransactionalService wraps mutations but leaves reads outside transaction boundary', async () => {
   const calls = [];
   const service = {
