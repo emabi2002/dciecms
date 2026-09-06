@@ -4,7 +4,7 @@ on:
   push:
     branches:
       - main
-      - feat/first-vertical-slice
+      - 'feat/**'
   pull_request:
     branches:
       - main

@@ -1,10 +1,14 @@
 import { getRuntimeConfig, type DevIdentityConfig, type RuntimeConfig } from '../config/runtime';
 import type {
+  AppearanceRecord,
   CaseRecord,
   DocumentMetadata,
   FeeAssessment,
   Filing,
+  HearingRecord,
+  JudgmentRecord,
   Payment,
+  ProceedingRecord,
   Receipt,
   Reconciliation,
   WorkflowTask
@@ -32,7 +36,7 @@ export class ApiError extends Error {
 }
 
 export type ApiRequest = {
-  method: 'GET' | 'POST';
+  method: 'GET' | 'POST' | 'PUT';
   path: string;
   body?: unknown;
   signal?: AbortSignal;
@@ -152,11 +156,7 @@ export function acceptFiling(filingId: string, config?: ApiClientConfig) {
 }
 
 export function assessFee(filingId: string, amountMinor: number, currency = 'PGK', config?: ApiClientConfig) {
-  return apiRequest<FeeAssessment>({
-    method: 'POST',
-    path: `/filings/${id(filingId)}/fee-assessments`,
-    body: { amountMinor, currency }
-  }, config);
+  return apiRequest<FeeAssessment>({ method: 'POST', path: `/filings/${id(filingId)}/fee-assessments`, body: { amountMinor, currency } }, config);
 }
 
 export function createPayment(assessmentId: string, config?: ApiClientConfig) {
@@ -164,11 +164,7 @@ export function createPayment(assessmentId: string, config?: ApiClientConfig) {
 }
 
 export function confirmPayment(paymentId: string, providerReference: string, config?: ApiClientConfig) {
-  return apiRequest<Payment>({
-    method: 'POST',
-    path: `/payments/${id(paymentId)}/confirm`,
-    body: { providerReference }
-  }, config);
+  return apiRequest<Payment>({ method: 'POST', path: `/payments/${id(paymentId)}/confirm`, body: { providerReference } }, config);
 }
 
 export function issueReceipt(paymentId: string, config?: ApiClientConfig) {
@@ -180,17 +176,105 @@ export function createReconciliation(paymentId: string, config?: ApiClientConfig
 }
 
 export function certifyReconciliation(reconciliationId: string, config?: ApiClientConfig) {
-  return apiRequest<Reconciliation>({
-    method: 'POST',
-    path: `/reconciliations/${id(reconciliationId)}/certify`,
-    body: {}
-  }, config);
+  return apiRequest<Reconciliation>({ method: 'POST', path: `/reconciliations/${id(reconciliationId)}/certify`, body: {} }, config);
 }
 
 export function openCase(filingId: string, paymentId: string, config?: ApiClientConfig) {
-  return apiRequest<CaseRecord>({
-    method: 'POST',
-    path: `/filings/${id(filingId)}/open-case`,
-    body: { paymentId }
-  }, config);
+  return apiRequest<CaseRecord>({ method: 'POST', path: `/filings/${id(filingId)}/open-case`, body: { paymentId } }, config);
+}
+
+export function listMyCases(config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<CaseRecord[]>({ method: 'GET', path: '/judicial/my-cases', signal }, config);
+}
+
+export function getJudicialCase(caseId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<CaseRecord>({ method: 'GET', path: `/judicial/cases/${id(caseId)}`, signal }, config);
+}
+
+export function assignCase(caseId: string, assigneeSubject: string, config?: ApiClientConfig) {
+  return apiRequest<CaseRecord>({ method: 'POST', path: `/cases/${id(caseId)}/assign`, body: { assigneeSubject } }, config);
+}
+
+export function listDailyHearings(date: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<HearingRecord[]>({ method: 'GET', path: `/judicial/daily-list?date=${encodeURIComponent(date)}`, signal }, config);
+}
+
+export function getJudicialHearing(hearingId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<HearingRecord>({ method: 'GET', path: `/judicial/hearings/${id(hearingId)}`, signal }, config);
+}
+
+export function scheduleHearing(
+  caseId: string,
+  input: Pick<HearingRecord, 'hearingType' | 'scheduledStart' | 'scheduledEnd'> & { courtroom?: string | null },
+  config?: ApiClientConfig
+) {
+  return apiRequest<HearingRecord>({ method: 'POST', path: `/cases/${id(caseId)}/hearings`, body: input }, config);
+}
+
+export function adjournHearing(
+  hearingId: string,
+  input: { reason: string; nextStart?: string; nextEnd?: string },
+  config?: ApiClientConfig
+) {
+  return apiRequest<HearingRecord>({ method: 'POST', path: `/hearings/${id(hearingId)}/adjourn`, body: input }, config);
+}
+
+export function startHearing(hearingId: string, config?: ApiClientConfig) {
+  return apiRequest<HearingRecord>({ method: 'POST', path: `/hearings/${id(hearingId)}/start`, body: {} }, config);
+}
+
+export function recordAppearance(
+  hearingId: string,
+  input: Pick<AppearanceRecord, 'participantName' | 'participantRole' | 'appearanceMode'>,
+  config?: ApiClientConfig
+) {
+  return apiRequest<AppearanceRecord>({ method: 'POST', path: `/hearings/${id(hearingId)}/appearances`, body: input }, config);
+}
+
+export function recordProceeding(
+  hearingId: string,
+  input: { note?: string; recordReference?: string },
+  config?: ApiClientConfig
+) {
+  return apiRequest<ProceedingRecord>({ method: 'POST', path: `/hearings/${id(hearingId)}/proceedings`, body: input }, config);
+}
+
+export function completeHearing(hearingId: string, outcomeCode: string, config?: ApiClientConfig) {
+  return apiRequest<HearingRecord>({ method: 'POST', path: `/hearings/${id(hearingId)}/complete`, body: { outcomeCode } }, config);
+}
+
+export function createJudgment(
+  caseId: string,
+  input: Pick<JudgmentRecord, 'hearingId' | 'decisionType' | 'title' | 'content'>,
+  config?: ApiClientConfig
+) {
+  return apiRequest<JudgmentRecord>({ method: 'POST', path: `/cases/${id(caseId)}/judgments`, body: input }, config);
+}
+
+export function getJudgment(judgmentId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<JudgmentRecord>({ method: 'GET', path: `/judicial/judgments/${id(judgmentId)}`, signal }, config);
+}
+
+export function listPendingDecisions(config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<JudgmentRecord[]>({ method: 'GET', path: '/judicial/pending-decisions', signal }, config);
+}
+
+export function updateJudgmentDraft(
+  judgmentId: string,
+  input: Pick<JudgmentRecord, 'title' | 'content'>,
+  config?: ApiClientConfig
+) {
+  return apiRequest<JudgmentRecord>({ method: 'PUT', path: `/judgments/${id(judgmentId)}`, body: input }, config);
+}
+
+export function reviewJudgment(judgmentId: string, config?: ApiClientConfig) {
+  return apiRequest<JudgmentRecord>({ method: 'POST', path: `/judgments/${id(judgmentId)}/review`, body: {} }, config);
+}
+
+export function signJudgment(judgmentId: string, config?: ApiClientConfig) {
+  return apiRequest<JudgmentRecord>({ method: 'POST', path: `/judgments/${id(judgmentId)}/sign`, body: {} }, config);
+}
+
+export function issueJudgment(judgmentId: string, config?: ApiClientConfig) {
+  return apiRequest<JudgmentRecord>({ method: 'POST', path: `/judgments/${id(judgmentId)}/issue`, body: {} }, config);
 }
