@@ -38,7 +38,12 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'GET' && path === '/judicial/my-cases') return send(res, 200, await service.listMyCases(actor));
       if (req.method === 'GET' && path === '/judicial/daily-list') return send(res, 200, await service.listDailyHearings(actor, { date: url.searchParams.get('date') }));
       if (req.method === 'GET' && path === '/judicial/pending-decisions') return send(res, 200, await service.listPendingDecisions(actor));
+      if (req.method === 'GET' && path === '/finance/payments') return send(res, 200, await service.listFinanceQueue(actor, { status: url.searchParams.get('status') }));
+      if (req.method === 'GET' && path === '/finance/receipts') return send(res, 200, await service.listReceipts(actor, { status: url.searchParams.get('status') }));
+      if (req.method === 'GET' && path === '/finance/reconciliations') return send(res, 200, await service.listReconciliations(actor, { status: url.searchParams.get('status') }));
 
+      const financePaymentGet = path.match(/^\/finance\/payments\/([^/]+)$/);
+      if (req.method === 'GET' && financePaymentGet) return send(res, 200, await service.getPaymentDetail(actor, financePaymentGet[1]));
       const judicialCaseGet = path.match(/^\/judicial\/cases\/([^/]+)$/);
       if (req.method === 'GET' && judicialCaseGet) return send(res, 200, await service.getJudicialCase(actor, judicialCaseGet[1]));
       const judicialHearingGet = path.match(/^\/judicial\/hearings\/([^/]+)$/);
