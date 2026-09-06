@@ -66,9 +66,16 @@ class JudicialOperationsService extends PersistentDciecmsService {
     const { hearing } = await this._hearingContext(actor, hearingId, 'hearing.adjourn');
     const reason = String(input?.reason || '').trim();
     if (!reason) throw new ValidationError('Adjournment reason is required');
-    const nextStart = input?.nextStart ? new Date(Date.parse(input.nextStart)).toISOString() : null;
-    const nextEnd = input?.nextEnd ? new Date(Date.parse(input.nextEnd)).toISOString() : null;
-    if ((nextStart && !nextEnd) || (!nextStart && nextEnd) || (nextStart && Date.parse(nextEnd) <= Date.parse(nextStart))) throw new ValidationError('Next hearing schedule is invalid');
+    const rawNextStart = input?.nextStart ? String(input.nextStart).trim() : '';
+    const rawNextEnd = input?.nextEnd ? String(input.nextEnd).trim() : '';
+    const nextStartMs = rawNextStart ? Date.parse(rawNextStart) : null;
+    const nextEndMs = rawNextEnd ? Date.parse(rawNextEnd) : null;
+    if ((rawNextStart && !rawNextEnd) || (!rawNextStart && rawNextEnd) ||
+        (rawNextStart && (!Number.isFinite(nextStartMs) || !Number.isFinite(nextEndMs) || nextEndMs <= nextStartMs))) {
+      throw new ValidationError('Next hearing schedule is invalid');
+    }
+    const nextStart = rawNextStart ? new Date(nextStartMs).toISOString() : null;
+    const nextEnd = rawNextEnd ? new Date(nextEndMs).toISOString() : null;
     try {
       const adjourned = await this.repository.adjournHearing({ hearingId, reason, nextStart, nextEnd, nextHearingId: nextStart ? randomUUID() : null, actorSubject: actor.userId, at: new Date().toISOString() });
       this._audit(actor, 'hearing.adjourn', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId, reason });
