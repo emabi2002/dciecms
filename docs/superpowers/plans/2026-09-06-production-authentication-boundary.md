@@ -18,6 +18,7 @@
 - `x-dev-*` identity headers remain development-only and are never read by the OIDC resolver.
 - `DCIECMS_AUTH_MODE` is explicit; unknown/missing mode fails startup and `development` mode is forbidden when `NODE_ENV=production`.
 - OIDC configuration is fail-closed: issuer, audience, JWKS URI, and allowed algorithms are mandatory.
+- OIDC issuer and JWKS URLs use HTTPS; controlled tests inject local key resolvers instead of weakening that runtime rule.
 - Authentication failures return sanitized 401; authenticated authorization failures remain 403; safely identified JWKS infrastructure failures return 503; unexpected internal failures remain sanitized 500.
 - Bearer tokens, signing keys, and raw claims must not be written to errors, logs, audit metadata, outbox payloads, or domain records.
 - The Court Workspace receives an access token through an injected provider; this workstream does not implement browser login, PKCE, refresh tokens, or logout federation.
@@ -43,12 +44,12 @@
 - `services/api/src/http-app.js` — await async actor resolvers and map authentication-specific failures.
 - `services/api/src/server.js` — construct the configured authentication resolver before listening.
 - `tests/unit/auth-rbac.test.js` — verified-claim shape tests.
-- `tests/api/http-app.test.js` — 401/403/503 and async-resolver integration tests.
+- `tests/api/http-app.test.js` — 401/403/503/500 and async-resolver integration tests.
 - `package.json` — add `jose` 6.x backend dependency.
 - `apps/court-workspace/src/api/client.ts` — injected bearer-token provider and no dev fallback.
 - `apps/court-workspace/src/api/client.test.ts` — bearer header and no-fallback tests.
 - `.env.example` — explicit development/OIDC authentication settings without real credentials.
-- `docs/runbooks/LOCAL_DEVELOPMENT.md` — explicit development-mode startup instructions.
+- `docs/runbooks/LOCAL_DEVELOPMENT.md` — explicit development-mode startup and dependency instructions.
 - `README.md` — production authentication boundary status and non-goals.
 - `docs/architecture/IMPLEMENTATION_STATUS.md` — mark the provider-neutral code boundary implemented while leaving live IdP integration outstanding.
 
@@ -278,7 +279,11 @@ test('oidc mode rejects symmetric and none algorithms', () => {
   );
 });
 
-test('production oidc URLs must use https', () => {
+test('oidc issuer and jwks URLs must use https', () => {
+  assert.throws(
+    () => loadAuthenticationConfig({ ...oidcEnv, DCIECMS_OIDC_ISSUER: 'http://identity.example.test' }),
+    /https/i
+  );
   assert.throws(
     () => loadAuthenticationConfig({ ...oidcEnv, DCIECMS_OIDC_JWKS_URI: 'http://identity.example.test/jwks' }),
     /https/i
@@ -329,20 +334,20 @@ function required(env, name) {
   return value;
 }
 
-function absoluteHttpUrl(value, name, production) {
+function absoluteHttpsUrl(value, name) {
   let parsed;
   try { parsed = new URL(value); } catch { throw new Error(`${name} must be an absolute URL`); }
-  if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error(`${name} must use http or https`);
-  if (production && parsed.protocol !== 'https:') throw new Error(`${name} must use https in production`);
+  if (parsed.protocol !== 'https:') throw new Error(`${name} must use https`);
   return value;
 }
 
 function loadAuthenticationConfig(env = process.env) {
   const mode = required(env, 'DCIECMS_AUTH_MODE').toLowerCase();
-  const production = env.NODE_ENV === 'production';
 
   if (mode === 'development') {
-    if (production) throw new Error('development authentication mode is forbidden in production');
+    if (env.NODE_ENV === 'production') {
+      throw new Error('development authentication mode is forbidden in production');
+    }
     return Object.freeze({ mode: 'development' });
   }
 
@@ -356,9 +361,9 @@ function loadAuthenticationConfig(env = process.env) {
 
   return Object.freeze({
     mode: 'oidc',
-    issuer: absoluteHttpUrl(required(env, 'DCIECMS_OIDC_ISSUER'), 'DCIECMS_OIDC_ISSUER', production),
+    issuer: absoluteHttpsUrl(required(env, 'DCIECMS_OIDC_ISSUER'), 'DCIECMS_OIDC_ISSUER'),
     audience: required(env, 'DCIECMS_OIDC_AUDIENCE'),
-    jwksUri: absoluteHttpUrl(required(env, 'DCIECMS_OIDC_JWKS_URI'), 'DCIECMS_OIDC_JWKS_URI', production),
+    jwksUri: absoluteHttpsUrl(required(env, 'DCIECMS_OIDC_JWKS_URI'), 'DCIECMS_OIDC_JWKS_URI'),
     algorithms: Object.freeze([...new Set(algorithms)])
   });
 }
@@ -488,7 +493,7 @@ Update root `package.json`:
 }
 ```
 
-Keep the backend CommonJS. Load `jose` with dynamic `import('jose')`.
+Keep the backend CommonJS. Load `jose` with dynamic `import('jose')` so Node 20 CI does not depend on CommonJS `require(esm)` support.
 
 - [ ] **Step 2: Create RED cryptographic test fixture**
 
@@ -598,7 +603,7 @@ test('issuer audience time subject and claim-shape failures are rejected', async
 });
 ```
 
-- [ ] **Step 5: Add exact RED invalid-signature and disallowed-algorithm tests**
+- [ ] **Step 5: Add exact RED signature/algorithm/key-selection tests**
 
 Append:
 
@@ -621,6 +626,12 @@ test('disallowed signing algorithm is rejected before authorization claims are u
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(secret);
+  await assert.rejects(() => resolver(requestWith(token)), AuthenticationError);
+});
+
+test('unknown kid is an invalid credential rather than an infrastructure outage', async () => {
+  const { resolver, sign } = await fixture();
+  const token = await sign({}, { kid: 'unknown-key' });
   await assert.rejects(() => resolver(requestWith(token)), AuthenticationError);
 });
 ```
@@ -789,7 +800,7 @@ async function createOidcActorResolver(config, dependencies = {}) {
 module.exports = { createJwksFetch, createOidcActorResolver };
 ```
 
-`ERR_JWKS_NO_MATCHING_KEY` stays inside the verification-error path and therefore returns 401, not 503. The configured JWKS URL is the only remote key source; no token/header value can change it.
+`ERR_JWKS_NO_MATCHING_KEY` remains in the invalid-credential path and therefore becomes 401, not 503. The configured JWKS URL is the only remote key source; no token/header value can change it.
 
 - [ ] **Step 10: Run security + auth unit tests GREEN and commit Task 3**
 
@@ -810,11 +821,11 @@ git commit -m "feat: verify oidc bearer tokens with jwks"
 **Interfaces:**
 - Consumes: an actor resolver that may return an actor synchronously or a Promise of an actor.
 - Consumes: `AuthenticationError`, `AuthenticationUnavailableError`.
-- Produces: 401 + `WWW-Authenticate: Bearer`, 503 for authentication infrastructure unavailability, existing 403 for authorization denial, generic 500 otherwise.
+- Produces: bearer-auth failures as 401 + `WWW-Authenticate: Bearer`, JWKS infrastructure unavailability as 503, existing authorization denial as 403, and unexpected errors as generic 500.
 
-- [ ] **Step 1: Add RED async-resolver and authentication-error test helper**
+- [ ] **Step 1: Add RED HTTP authentication test helper**
 
-Append near the existing HTTP test helpers:
+Append near the existing helpers:
 
 ```js
 const { AuthenticationError, AuthenticationUnavailableError } = require('../../packages/auth');
@@ -861,7 +872,23 @@ test('authentication infrastructure failure returns sanitized 503', async () => 
     async base => {
       const response = await fetch(`${base}/registry/filings`);
       assert.equal(response.status, 503);
+      assert.equal(response.headers.get('www-authenticate'), null);
       assert.deepEqual(await response.json(), { error: 'authentication_unavailable' });
+    }
+  );
+});
+
+test('unexpected authentication boundary error returns sanitized 500', async () => {
+  await withResolver(
+    async () => { throw new Error('INTERNAL_AUTH_DETAIL_DO_NOT_LEAK'); },
+    {},
+    async base => {
+      const response = await fetch(`${base}/registry/filings`);
+      const text = await response.text();
+      assert.equal(response.status, 500);
+      assert.equal(response.headers.get('www-authenticate'), null);
+      assert.equal(text.includes('INTERNAL_AUTH_DETAIL_DO_NOT_LEAK'), false);
+      assert.deepEqual(JSON.parse(text), { error: 'internal_error' });
     }
   );
 });
@@ -910,18 +937,16 @@ function mapError(error, res) {
 }
 ```
 
-- [ ] **Step 5: Await the resolver and challenge missing development actors consistently**
+- [ ] **Step 5: Await the resolver while preserving development-mode missing-actor behavior**
 
-Change the authentication call inside the handler:
+Change only:
 
 ```js
 const actor = await actorResolver(req);
-if (!actor) {
-  return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
-}
+if (!actor) return send(res, 401, { error: 'unauthorized' });
 ```
 
-Do not move authorization into the HTTP adapter.
+OIDC missing/malformed bearer credentials throw `AuthenticationError` and therefore receive the Bearer challenge. A development resolver returning `null` keeps the existing generic 401 without pretending a bearer credential was requested.
 
 - [ ] **Step 6: Verify HTTP tests GREEN and commit**
 
@@ -987,7 +1012,7 @@ Do not log issuer, audience, JWKS URI, token, key data, or raw claims.
 node --test tests/unit/auth-config.test.js tests/api/http-app.test.js tests/security/production-authentication.test.js
 ```
 
-Expected: PASS. The existing runtime-factory rejection test proves there is no fallback if OIDC resolver construction fails.
+Expected: PASS. The runtime-construction rejection test proves there is no fallback if OIDC resolver construction fails.
 
 - [ ] **Step 3: Commit Task 5**
 
@@ -1184,8 +1209,6 @@ assert.equal(res.status, 403);
 assert.equal(res.headers.get('www-authenticate'), null);
 ```
 
-This verifies a valid identity denied by RBAC remains an authorization response.
-
 - [ ] **Step 4: Run security/API suites GREEN and commit**
 
 ```bash
@@ -1210,7 +1233,7 @@ git commit -m "test: harden authentication boundary regressions"
 
 - [ ] **Step 1: Update `.env.example`**
 
-Retain the existing database example and add:
+Retain the database example and add:
 
 ```dotenv
 # Development API
@@ -1218,7 +1241,7 @@ PORT=3000
 DCIECMS_AUTH_MODE=development
 
 # Production OIDC authentication example — values are placeholders only.
-# Never commit live IdP credentials or production endpoint secrets.
+# Never commit live IdP credentials.
 # DCIECMS_AUTH_MODE=oidc
 # DCIECMS_OIDC_ISSUER=https://identity.example.gov.pg
 # DCIECMS_OIDC_AUDIENCE=dciecms-api
@@ -1226,7 +1249,13 @@ DCIECMS_AUTH_MODE=development
 # DCIECMS_OIDC_ALLOWED_ALGS=RS256
 ```
 
-- [ ] **Step 2: Update local-development startup instructions**
+- [ ] **Step 2: Correct local-development preconditions and startup instructions**
+
+Replace the stale dependency statement with:
+
+```text
+Run npm install at the repository root before starting the API. The backend uses pg for PostgreSQL access and jose for production JWT/JWKS verification.
+```
 
 Replace the old start command with:
 
@@ -1234,7 +1263,7 @@ Replace the old start command with:
 DCIECMS_AUTH_MODE=development PORT=3000 npm start
 ```
 
-Add this exact boundary statement:
+Add:
 
 ```text
 The x-dev-* identity headers are accepted only when DCIECMS_AUTH_MODE=development.
@@ -1248,9 +1277,9 @@ Document:
 
 ```text
 DCIECMS_AUTH_MODE=oidc
-DCIECMS_OIDC_ISSUER=<approved issuer>
+DCIECMS_OIDC_ISSUER=<approved HTTPS issuer>
 DCIECMS_OIDC_AUDIENCE=<approved DCIECMS API audience>
-DCIECMS_OIDC_JWKS_URI=<approved JWKS URI>
+DCIECMS_OIDC_JWKS_URI=<approved HTTPS JWKS URI>
 DCIECMS_OIDC_ALLOWED_ALGS=<approved asymmetric algorithms>
 ```
 
@@ -1359,7 +1388,7 @@ Do not call Workstream 3 complete until the `main` push workflow for that exact 
 
 - [ ] Every accepted design section maps to at least one implementation task.
 - [ ] `sub`, `roles`, `court_ids`, `explicit_grants` are trusted only after verification.
-- [ ] Missing/malformed/invalid-signature/wrong-issuer/wrong-audience/expired/not-yet-valid/disallowed-alg tokens are covered by 401 tests.
+- [ ] Missing/malformed/invalid-signature/wrong-issuer/wrong-audience/expired/not-yet-valid/disallowed-alg/unknown-key tokens are covered by invalid-credential tests.
 - [ ] JWKS timeout, network failure, and non-2xx transport failure are fail-closed.
 - [ ] Existing RBAC/court-scope denial remains 403.
 - [ ] OIDC mode never reads `x-dev-*` identity.
@@ -1367,6 +1396,7 @@ Do not call Workstream 3 complete until the `main` push workflow for that exact 
 - [ ] JWKS resolver is constructed once and has cache/cooldown/timeout configuration.
 - [ ] Frontend bearer injection exists without browser login or JWT-derived authorization.
 - [ ] No bearer token or raw claim persistence/logging is introduced.
+- [ ] Unexpected authentication-boundary failures are sanitized 500 responses.
 - [ ] No live IdP configuration, credentials, production deployment, or DB migration is included.
 - [ ] Full backend/frontend/build/CI/security-review gates are explicit.
 - [ ] The plan contains no unresolved implementation placeholders.
