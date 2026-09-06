@@ -4,6 +4,12 @@ const { authorize, AccessDeniedError } = require('../../../packages/rbac');
 const { ConflictError, NotFoundError, ValidationError } = require('./dciecms-service');
 const { PersistentDciecmsService } = require('./persistent-dciecms-service');
 
+function isIsoCalendarDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = Date.parse(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed) && new Date(parsed).toISOString().slice(0, 10) === value;
+}
+
 class JudicialOperationsService extends PersistentDciecmsService {
   _stateConflict(error, code, message) {
     if (error.code === code) throw new ConflictError(message);
@@ -86,7 +92,7 @@ class JudicialOperationsService extends PersistentDciecmsService {
   async listDailyHearings(actor, input) {
     authorize(actor, 'hearing.view', {});
     const date = String(input?.date || '').trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) throw new ValidationError('date must be YYYY-MM-DD');
+    if (!isIsoCalendarDate(date)) throw new ValidationError('date must be a valid YYYY-MM-DD calendar date');
     const rows = await this.repository.listDailyHearings({ courtIds: actor.courtIds, date });
     this._audit(actor, 'hearing.daily_list.view', 'hearing_queue', date, { courtIds: actor.courtIds });
     return rows;
