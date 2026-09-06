@@ -51,6 +51,20 @@ class JudgmentPostgresRepository extends JudicialPostgresRepository {
     return mapJudgment(result.rows[0]);
   }
 
+  async listPendingJudgments({ courtIds, assigneeSubject }) {
+    const result = await this.db.query(
+      `SELECT j.${JUDGMENT_COLUMNS.replaceAll(',', ',j.')}
+       FROM judicial.judgments j
+       JOIN case_mgmt.cases c ON c.case_id=j.case_id
+       WHERE j.court_id = ANY($1::uuid[])
+         AND c.assigned_to_subject=$2
+         AND j.status IN ('DRAFT','FINAL','SIGNED')
+       ORDER BY COALESCE(j.updated_at,j.created_at) DESC, j.judgment_id`,
+      [courtIds, assigneeSubject]
+    );
+    return result.rows.map(mapJudgment);
+  }
+
   async updateJudgmentDraft({ judgmentId, title, content, actorSubject, at }) {
     const result = await this.db.query(
       `UPDATE judicial.judgments
