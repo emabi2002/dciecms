@@ -52,7 +52,7 @@ test('CLEAN scan activates exact quarantined document and completes job inside o
   assert.equal(result.claimed,1);
   assert.equal(result.clean,1);
   assert.equal(h.state.document.status,'ACTIVE');
-  assert.deepEqual(callNames(h.calls),['claimDue','getDocument','scan','tx.begin','activateCleanDocument','markClean','audit','tx.commit']);
+  assert.deepEqual(callNames(h.calls),['claimDue','getDocument','headObject','scan','tx.begin','activateCleanDocument','markClean','audit','tx.commit']);
   const scanCall=h.calls.find(call=>call[0]==='scan')[1];
   assert.deepEqual(scanCall,{documentId:'DOC-1',objectKey:DOCUMENT.storageObjectKey,checksumSha256:DOCUMENT.checksumSha256,sizeBytes:123,mimeType:'application/pdf'});
   const audit=h.calls.find(call=>call[0]==='audit')[1];
@@ -93,7 +93,7 @@ test('INFECTED scan rejects document and records terminal infected job without r
   assert.equal(result.infected,1);
   assert.equal(h.state.document.status,'REJECTED');
   assert.equal(h.state.document.releasedAt,null);
-  assert.deepEqual(callNames(h.calls),['claimDue','getDocument','scan','tx.begin','rejectDocumentAfterScan','markInfected','audit','tx.commit']);
+  assert.deepEqual(callNames(h.calls),['claimDue','getDocument','headObject','scan','tx.begin','rejectDocumentAfterScan','markInfected','audit','tx.commit']);
 });
 
 test('retryable scanner result leaves document quarantined and schedules bounded retry',async()=>{
@@ -137,6 +137,7 @@ test('non-quarantined document is never scanned or activated and the leased job 
   h.state.document=Object.freeze({...DOCUMENT,status:'ACTIVE',releasedAt:NOW,scanStatus:'CLEAN'});
   const result=await h.worker.runOnce();
   assert.equal(result.permanentFailure,1);
+  assert.equal(callNames(h.calls).includes('headObject'),false);
   assert.equal(callNames(h.calls).includes('scan'),false);
   assert.equal(callNames(h.calls).includes('activateCleanDocument'),false);
   const dead=h.calls.find(call=>call[0]==='markPermanentFailure')[1];
