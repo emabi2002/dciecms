@@ -25,8 +25,9 @@
 
 ## Task 4 — Domain-event service integration
 
-- Add RED tests for the selected events: filing accepted, payment confirmed, case opened, hearing scheduled/adjourned and judgment issued.
+- Add RED tests for the selected events: filing submitted, payment confirmed, case opened, hearing scheduled, hearing adjourned, hearing completed and judgment issued.
 - Add an event-store dependency with a no-op default and await server-generated outbox events after successful domain mutation/audit.
+- Keep generic event payloads minimal: exclude payment provider references and free-text judicial adjournment reasons.
 - Preserve all existing authorization and state-transition contracts.
 
 ## Task 5 — PostgreSQL runtime and transaction atomicity
@@ -41,5 +42,7 @@
 - Run Court Workspace tests.
 - Run production frontend build.
 - Review the exact PR diff and correct Critical/Important findings.
+- Harden the outbox claim SQL so candidate identifiers cannot collide with returned target-table columns.
+- Document **at-least-once** delivery semantics and require idempotent downstream handlers.
 - Update README and implementation status to record R5 while leaving real provider integrations outstanding.
 - Merge only after a fresh final CI run is completely green.
