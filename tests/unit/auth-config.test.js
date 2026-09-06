@@ -2,6 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { loadAuthenticationConfig } = require('../../services/api/src/auth-config');
+const { createAuthenticationResolver } = require('../../services/api/src/auth-runtime');
 
 const oidcEnv = {
   NODE_ENV: 'production',
@@ -75,4 +76,35 @@ test('valid oidc configuration preserves exact issuer and jwks strings', () => {
     jwksUri: 'https://identity.example.test/tenant/jwks/',
     algorithms: ['RS256', 'ES256']
   });
+});
+
+test('runtime selects development resolver only in explicit development mode', async () => {
+  const resolver = await createAuthenticationResolver({ DCIECMS_AUTH_MODE: 'development' });
+  const actor = resolver({ headers: {
+    'x-dev-sub': 'reg-a',
+    'x-dev-roles': 'REG',
+    'x-dev-courts': 'COURT-A'
+  }});
+  assert.equal(actor.userId, 'reg-a');
+});
+
+test('runtime constructs oidc resolver from oidc configuration', async () => {
+  let received;
+  const resolver = await createAuthenticationResolver(oidcEnv, {
+    createOidcActorResolver: async config => {
+      received = config;
+      return () => ({ userId: 'verified' });
+    }
+  });
+  assert.equal(received.mode, 'oidc');
+  assert.equal(resolver({ headers: {} }).userId, 'verified');
+});
+
+test('runtime does not fall back when oidc resolver construction fails', async () => {
+  await assert.rejects(
+    () => createAuthenticationResolver(oidcEnv, {
+      createOidcActorResolver: async () => { throw new Error('verifier construction failed'); }
+    }),
+    /verifier construction failed/
+  );
 });
