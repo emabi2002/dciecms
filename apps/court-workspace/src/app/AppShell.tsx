@@ -11,6 +11,7 @@ export function AppShell() {
           <NavLink to="/filings">Filings</NavLink>
           <NavLink to="/payments">Payments</NavLink>
           <NavLink to="/cases">Cases</NavLink>
+          <NavLink to="/judicial/my-cases">My Cases</NavLink>
         </nav>
       </header>
       <main id="main-content">
