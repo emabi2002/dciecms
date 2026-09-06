@@ -2,7 +2,7 @@
 
 const path = require('node:path');
 const { randomUUID } = require('node:crypto');
-const { authorize } = require('../../../packages/rbac');
+const { authorize, AccessDeniedError } = require('../../../packages/rbac');
 const {
   DEFAULT_DOCUMENT_POLICY,
   DocumentPolicyError,
@@ -78,6 +78,10 @@ function mapRepositoryConflict(error) {
   return error;
 }
 
+function isPublicActor(actor) {
+  return Array.isArray(actor?.roles) && actor.roles.includes('PUBLIC');
+}
+
 class SecureDocumentService {
   constructor({
     repository,
@@ -148,6 +152,21 @@ class SecureDocumentService {
     return document;
   }
 
+  _assertPublicFilingRelationship(actor, filing) {
+    if (isPublicActor(actor) && String(filing?.createdBy || '') !== String(actor?.userId || '')) {
+      throw new AccessDeniedError('Public filing relationship required');
+    }
+  }
+
+  async _filingRelationshipForDocument(actor, document) {
+    const filing = await this._filing(document.filingId);
+    if (filing.courtId !== document.courtId) {
+      throw new SecureDocumentConflictError('Document and filing court do not match');
+    }
+    this._assertPublicFilingRelationship(actor, filing);
+    return filing;
+  }
+
   async _initiate(actor, filing, input, { versionNumber = 1, priorDocumentId = null, action = 'document.upload.initiate' } = {}) {
     requiredServiceDependency(this.repository, 'createDocumentUploadIntent', 'repository');
     if (callerControlsStorage(input)) {
@@ -194,6 +213,7 @@ class SecureDocumentService {
   async initiateDocumentUpload(actor, filingId, input = {}) {
     const filing = await this._filing(filingId);
     authorize(actor, 'filing.view', { courtId: filing.courtId });
+    this._assertPublicFilingRelationship(actor, filing);
     return this._initiate(actor, filing, input);
   }
 
@@ -201,6 +221,7 @@ class SecureDocumentService {
     requiredServiceDependency(this.repository, 'finalizeDocumentAndCreateScanJob', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.upload', { courtId: document.courtId });
+    await this._filingRelationshipForDocument(actor, document);
     if (!document.storageObjectKey || !Number.isSafeInteger(Number(document.expectedSizeBytes)) || Number(document.expectedSizeBytes) <= 0) {
       throw new SecureDocumentConflictError('Document upload intent is incomplete');
     }
@@ -241,10 +262,12 @@ class SecureDocumentService {
 
   async authorizeDocumentDownload(actor, documentId) {
     const document = await this._document(documentId);
+    authorize(actor, 'document.view', { courtId: document.courtId });
+    await this._filingRelationshipForDocument(actor, document);
+    authorizeDocumentClassification(actor, document, 'view');
     if (document.status !== 'ACTIVE' || !document.storageObjectKey || !document.releasedAt) {
       throw new SecureDocumentConflictError('Document is not ACTIVE and released for download');
     }
-    authorizeDocumentClassification(actor, document, 'view');
     const now = this._nowIso();
     const downloadGrant = await this.storage.createDownloadGrant({
       objectKey: document.storageObjectKey,
@@ -283,11 +306,11 @@ class SecureDocumentService {
 
   async createReplacementDocument(actor, documentId, input = {}) {
     const original = await this._document(documentId);
+    authorize(actor, 'document.view', { courtId: original.courtId });
+    const filing = await this._filingRelationshipForDocument(actor, original);
     authorizeDocumentClassification(actor, original, 'view');
     authorize(actor, 'document.upload', { courtId: original.courtId });
     if (original.status !== 'ACTIVE') throw new SecureDocumentConflictError('Only an ACTIVE document can be replaced');
-    const filing = await this._filing(original.filingId);
-    if (filing.courtId !== original.courtId) throw new SecureDocumentConflictError('Document and filing court do not match');
     return this._initiate(actor, filing, {
       ...input,
       classification: input.classification ?? original.classification
