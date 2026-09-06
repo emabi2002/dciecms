@@ -2,7 +2,7 @@
 const { randomUUID } = require('node:crypto');
 const { FinanceOperationsPostgresRepository } = require('./finance-operations-postgres-repository');
 
-const NOTIFICATION_COLUMNS = `notification_id,court_id,channel,recipient,template_code,event_type,resource_id,status,created_by_subject,created_at,last_attempt_at,delivered_at`;
+const NOTIFICATION_COLUMNS = `notification_id,court_id,channel,recipient,template_code,event_type,resource_id,idempotency_key,status,created_by_subject,created_at,last_attempt_at,delivered_at`;
 const ATTEMPT_COLUMNS = `attempt_id,notification_id,outcome,provider_message_id,error_code,error_message,attempted_at`;
 
 function mapNotification(row) {
@@ -15,6 +15,7 @@ function mapNotification(row) {
     templateCode: row.template_code,
     eventType: row.event_type,
     resourceId: row.resource_id,
+    idempotencyKey: row.idempotency_key,
     status: row.status,
     createdBy: row.created_by_subject,
     createdAt: row.created_at,
@@ -37,13 +38,20 @@ function mapDeliveryAttempt(row) {
 }
 
 class NotificationPostgresRepository extends FinanceOperationsPostgresRepository {
-  async createNotification({ notificationId, courtId, channel, recipient, templateCode, eventType, resourceId, createdBy, createdAt }) {
+  async createNotification({ notificationId, courtId, channel, recipient, templateCode, eventType, resourceId, idempotencyKey, createdBy, createdAt }) {
     const result = await this.db.query(
-      `INSERT INTO notifications.notifications
-        (notification_id,court_id,channel,recipient,template_code,event_type,resource_id,status,created_by_subject,created_at)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,'QUEUED',$8,$9)
-       RETURNING ${NOTIFICATION_COLUMNS}`,
-      [notificationId, courtId, channel, recipient, templateCode, eventType, resourceId, createdBy, createdAt]
+      `WITH inserted AS (
+         INSERT INTO notifications.notifications
+           (notification_id,court_id,channel,recipient,template_code,event_type,resource_id,idempotency_key,status,created_by_subject,created_at)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,'QUEUED',$9,$10)
+         ON CONFLICT (idempotency_key) DO NOTHING
+         RETURNING ${NOTIFICATION_COLUMNS}
+       )
+       SELECT ${NOTIFICATION_COLUMNS} FROM inserted
+       UNION ALL
+       SELECT ${NOTIFICATION_COLUMNS} FROM notifications.notifications WHERE idempotency_key=$8
+       LIMIT 1`,
+      [notificationId, courtId, channel, recipient, templateCode, eventType, resourceId, idempotencyKey, createdBy, createdAt]
     );
     return mapNotification(result.rows[0]);
   }
