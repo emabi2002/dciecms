@@ -2,7 +2,7 @@
 const test=require('node:test');
 const assert=require('node:assert/strict');
 const {resolveActorFromClaims}=require('../../packages/auth');
-const {JudicialOperationsService}=require('../../services/api/src/judicial-operations-service');
+const {JudicialWorkbenchService}=require('../../services/api/src/judicial-workbench-service');
 
 const COURT_A='11111111-1111-1111-1111-111111111111';
 const COURT_B='22222222-2222-2222-2222-222222222222';
@@ -27,28 +27,28 @@ class ReadRepository {
 }
 
 test('MAG reads only own assigned case detail',async()=>{
-  const svc=new JudicialOperationsService({repository:new ReadRepository()});
+  const svc=new JudicialWorkbenchService({repository:new ReadRepository()});
   const row=await svc.getJudicialCase(mag,CASE_A);
   assert.equal(row.caseNumber,'POM-CIVIL-2026-000001');
   await assert.rejects(()=>svc.getJudicialCase(magB,CASE_A),/court|assigned|access/i);
 });
 
 test('MAG reads hearing detail only through assigned case access',async()=>{
-  const svc=new JudicialOperationsService({repository:new ReadRepository()});
+  const svc=new JudicialWorkbenchService({repository:new ReadRepository()});
   const row=await svc.getJudicialHearing(mag,HEARING_A);
   assert.equal(row.hearingId,HEARING_A);
   await assert.rejects(()=>svc.getJudicialHearing(magB,HEARING_A),/court|assigned|access/i);
 });
 
 test('MAG reads judgment detail only through assigned case access',async()=>{
-  const svc=new JudicialOperationsService({repository:new ReadRepository()});
+  const svc=new JudicialWorkbenchService({repository:new ReadRepository()});
   const row=await svc.getJudgment(mag,JUDGMENT_A);
   assert.equal(row.judgmentId,JUDGMENT_A);
   await assert.rejects(()=>svc.getJudgment(magB,JUDGMENT_A),/court|assigned|access/i);
 });
 
 test('pending decisions queue is constrained to actor court scope and assignment',async()=>{
-  const svc=new JudicialOperationsService({repository:new ReadRepository()});
+  const svc=new JudicialWorkbenchService({repository:new ReadRepository()});
   const mine=await svc.listPendingDecisions(mag);
   assert.equal(mine.length,1);
   assert.equal(mine[0].status,'DRAFT');
