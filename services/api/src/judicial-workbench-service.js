@@ -8,7 +8,7 @@ class JudicialWorkbenchService extends JudicialOperationsService {
     const courtCase = await this.repository.getCase(caseId);
     if (!courtCase) throw new NotFoundError('Case not found');
     this._requireJudicialCaseAccess(actor, courtCase, 'case.view');
-    this._audit(actor, 'judicial.case.view', 'case', caseId, { courtId: courtCase.courtId });
+    await this._audit(actor, 'judicial.case.view', 'case', caseId, { courtId: courtCase.courtId });
     return courtCase;
   }
 
@@ -18,7 +18,7 @@ class JudicialWorkbenchService extends JudicialOperationsService {
     const courtCase = await this.repository.getCase(hearing.caseId);
     if (!courtCase) throw new NotFoundError('Case not found');
     this._requireJudicialCaseAccess(actor, courtCase, 'hearing.view');
-    this._audit(actor, 'judicial.hearing.view', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId });
+    await this._audit(actor, 'judicial.hearing.view', 'hearing', hearingId, { courtId: hearing.courtId, caseId: hearing.caseId });
     return hearing;
   }
 
@@ -28,7 +28,7 @@ class JudicialWorkbenchService extends JudicialOperationsService {
     const courtCase = await this.repository.getCase(judgment.caseId);
     if (!courtCase) throw new NotFoundError('Case not found');
     this._requireJudicialCaseAccess(actor, courtCase, 'judgment.review');
-    this._audit(actor, 'judicial.judgment.view', 'judgment', judgmentId, { courtId: judgment.courtId, caseId: judgment.caseId });
+    await this._audit(actor, 'judicial.judgment.view', 'judgment', judgmentId, { courtId: judgment.courtId, caseId: judgment.caseId });
     return judgment;
   }
 
@@ -38,7 +38,7 @@ class JudicialWorkbenchService extends JudicialOperationsService {
       courtIds: actor.courtIds,
       assigneeSubject: actor.userId
     });
-    this._audit(actor, 'judicial.pending_decisions.view', 'judgment_queue', actor.userId, { courtIds: actor.courtIds });
+    await this._audit(actor, 'judicial.pending_decisions.view', 'judgment_queue', actor.userId, { courtIds: actor.courtIds });
     return rows;
   }
 }
