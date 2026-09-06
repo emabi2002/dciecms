@@ -309,6 +309,8 @@ class SecureDocumentService {
     requiredServiceDependency(this.repository, 'changeDocumentClassification', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.classification.change', { courtId: document.courtId });
+    await this._filingRelationshipForDocument(actor, document);
+    authorizeDocumentClassification(actor, document, 'view');
     requiredReason(reason);
     const target = String(classification || '').trim().toUpperCase();
     if (!DEFAULT_DOCUMENT_POLICY.classifications.includes(target)) {
@@ -355,8 +357,9 @@ class SecureDocumentService {
     if (original.documentId === replacement.documentId ||
         original.courtId !== replacement.courtId ||
         original.filingId !== replacement.filingId ||
+        replacement.priorDocumentId !== original.documentId ||
         original.status !== 'ACTIVE' || replacement.status !== 'ACTIVE') {
-      throw new SecureDocumentConflictError('Replacement is not an eligible ACTIVE version for this filing');
+      throw new SecureDocumentConflictError('Replacement is not an eligible ACTIVE version in this document lineage');
     }
     let superseded;
     try {
