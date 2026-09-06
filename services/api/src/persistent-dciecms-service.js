@@ -12,7 +12,7 @@ class PersistentDciecmsService {
     this.idempotency = new Map();
   }
 
-  _audit(actor, action, resourceType, resourceId, details = {}) {
+  async _audit(actor, action, resourceType, resourceId, details = {}) {
     return this.audit.append({ actorUserId: actor.userId, effectiveRoles: actor.roles, action, resourceType, resourceId, ...details });
   }
 
@@ -28,7 +28,7 @@ class PersistentDciecmsService {
     if (!input?.courtId || !input?.partyType || !input?.displayName) throw new ValidationError('courtId, partyType and displayName are required');
     authorize(actor, 'party.create', { courtId: input.courtId });
     const party = await this.repository.createParty({ partyId: randomUUID(), courtId: input.courtId, partyType: input.partyType, displayName: input.displayName });
-    this._audit(actor, 'party.create', 'party', party.partyId, { courtId: party.courtId });
+    await this._audit(actor, 'party.create', 'party', party.partyId, { courtId: party.courtId });
     return party;
   }
 
@@ -40,7 +40,7 @@ class PersistentDciecmsService {
     const party = await this.repository.getParty(input.filerPartyId);
     if (!party || party.courtId !== input.courtId) throw new ValidationError('Filer party is not available in the selected court scope');
     const filing = await this.repository.createFilingDraft({ filingId: randomUUID(), filingReference: `F-${Date.now()}-${Math.floor(Math.random() * 10000)}`, courtId: input.courtId, caseTypeCode, filerPartyId: input.filerPartyId, createdBy: actor.userId });
-    this._audit(actor, 'filing.create', 'filing', filing.filingId, { courtId: filing.courtId, caseTypeCode });
+    await this._audit(actor, 'filing.create', 'filing', filing.filingId, { courtId: filing.courtId, caseTypeCode });
     return filing;
   }
 
@@ -55,7 +55,7 @@ class PersistentDciecmsService {
     authorize(actor, 'filing.view', {});
     this._requireRegistry(actor);
     const rows = await this.repository.listRegistryQueue({ courtIds: actor.courtIds });
-    this._audit(actor, 'registry.queue.view', 'filing_queue', actor.courtIds.join(','), { courtIds: actor.courtIds });
+    await this._audit(actor, 'registry.queue.view', 'filing_queue', actor.courtIds.join(','), { courtIds: actor.courtIds });
     return rows;
   }
 
@@ -65,7 +65,7 @@ class PersistentDciecmsService {
     if (!metadata?.fileName || !metadata?.mimeType || !metadata?.checksumSha256) throw new ValidationError('fileName, mimeType and checksumSha256 are required');
     if (!/^[a-f0-9]{64}$/i.test(metadata.checksumSha256)) throw new ValidationError('checksumSha256 must be a SHA-256 hex digest');
     const document = await this.repository.createDocument({ documentId: randomUUID(), filingId, courtId: filing.courtId, fileName: metadata.fileName, mimeType: metadata.mimeType, sizeBytes: Number(metadata.sizeBytes || 0), checksumSha256: metadata.checksumSha256.toLowerCase(), classification: metadata.classification || 'CONFIDENTIAL' });
-    this._audit(actor, 'document.upload', 'document', document.documentId, { courtId: filing.courtId, filingId });
+    await this._audit(actor, 'document.upload', 'document', document.documentId, { courtId: filing.courtId, filingId });
     return document;
   }
 
@@ -73,7 +73,7 @@ class PersistentDciecmsService {
     const document = await this.repository.getDocument(documentId);
     if (!document) throw new NotFoundError('Document not found');
     authorize(actor, 'document.view', { courtId: document.courtId });
-    this._audit(actor, 'document.view', 'document', document.documentId, { courtId: document.courtId, filingId: document.filingId });
+    await this._audit(actor, 'document.view', 'document', document.documentId, { courtId: document.courtId, filingId: document.filingId });
     return document;
   }
 
@@ -83,7 +83,7 @@ class PersistentDciecmsService {
     if (typeof this.repository.submitFilingIdempotent === 'function') {
       try {
         const submitted = await this.repository.submitFilingIdempotent({ filingId, taskId: randomUUID(), actorSubject: actor.userId, submittedAt: new Date().toISOString(), idempotencyKey });
-        this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
+        await this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
         return submitted;
       } catch (error) {
         if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing submission state conflict');
@@ -97,7 +97,7 @@ class PersistentDciecmsService {
     try {
       const submitted = await this.repository.submitFilingAndCreateTask({ filingId, taskId: randomUUID(), actorSubject: actor.userId, submittedAt: new Date().toISOString() });
       this.idempotency.set(key, submitted);
-      this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
+      await this._audit(actor, 'filing.submit', 'filing', filingId, { courtId: filing.courtId, idempotencyKey });
       return submitted;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing submission state conflict');
@@ -113,7 +113,7 @@ class PersistentDciecmsService {
     if (!task) throw new ConflictError('Registry validation task is missing or already completed');
     try {
       const validated = await this.repository.validateFilingAndCompleteTask({ filingId, taskId: task.taskId, actorSubject: actor.userId, validatedAt: new Date().toISOString() });
-      this._audit(actor, 'filing.validate', 'filing', filingId, { courtId: filing.courtId, workflowTaskId: task.taskId });
+      await this._audit(actor, 'filing.validate', 'filing', filingId, { courtId: filing.courtId, workflowTaskId: task.taskId });
       return validated;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT' || error.code === 'TASK_STATE_CONFLICT') throw new ConflictError(error.message);
@@ -127,7 +127,7 @@ class PersistentDciecmsService {
     const filing = await this._filingForAccess(actor, filingId, 'filing.return');
     try {
       const returned = await this.repository.transitionFiling({ filingId, fromStatuses: ['SUBMITTED'], toStatus: 'RETURNED', actorSubject: actor.userId, reason: String(reason).trim(), at: new Date().toISOString() });
-      this._audit(actor, 'filing.return', 'filing', filingId, { courtId: filing.courtId, reason: String(reason).trim() });
+      await this._audit(actor, 'filing.return', 'filing', filingId, { courtId: filing.courtId, reason: String(reason).trim() });
       return returned;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing return state conflict');
@@ -141,7 +141,7 @@ class PersistentDciecmsService {
     const filing = await this._filingForAccess(actor, filingId, 'filing.reject');
     try {
       const rejected = await this.repository.transitionFiling({ filingId, fromStatuses: ['SUBMITTED', 'VALIDATED'], toStatus: 'REJECTED', actorSubject: actor.userId, reason: String(reason).trim(), at: new Date().toISOString() });
-      this._audit(actor, 'filing.reject', 'filing', filingId, { courtId: filing.courtId, reason: String(reason).trim() });
+      await this._audit(actor, 'filing.reject', 'filing', filingId, { courtId: filing.courtId, reason: String(reason).trim() });
       return rejected;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing rejection state conflict');
@@ -154,7 +154,7 @@ class PersistentDciecmsService {
     const filing = await this._filingForAccess(actor, filingId, 'filing.accept');
     try {
       const accepted = await this.repository.transitionFiling({ filingId, fromStatuses: ['VALIDATED'], toStatus: 'ACCEPTED', actorSubject: actor.userId, reason: null, at: new Date().toISOString() });
-      this._audit(actor, 'filing.accept', 'filing', filingId, { courtId: filing.courtId });
+      await this._audit(actor, 'filing.accept', 'filing', filingId, { courtId: filing.courtId });
       return accepted;
     } catch (error) {
       if (error.code === 'FILING_STATE_CONFLICT') throw new ConflictError('Filing acceptance state conflict');
@@ -170,7 +170,7 @@ class PersistentDciecmsService {
     const currency = String(input?.currency || 'PGK').trim().toUpperCase();
     if (!/^[A-Z]{3}$/.test(currency)) throw new ValidationError('currency must be a 3-letter code');
     const assessment = await this.repository.createFeeAssessment({ assessmentId: randomUUID(), filingId, courtId: filing.courtId, amountMinor, currency, actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.fee.assess', 'fee_assessment', assessment.assessmentId, { courtId: filing.courtId, filingId, amountMinor, currency });
+    await this._audit(actor, 'finance.fee.assess', 'fee_assessment', assessment.assessmentId, { courtId: filing.courtId, filingId, amountMinor, currency });
     return assessment;
   }
 
@@ -180,7 +180,7 @@ class PersistentDciecmsService {
     authorize(actor, 'finance.payment.create', { courtId: assessment.courtId });
     if (assessment.status !== 'ASSESSED') throw new ConflictError(`Payment cannot be created for assessment status ${assessment.status}`);
     const payment = await this.repository.createPayment({ paymentId: randomUUID(), assessmentId, courtId: assessment.courtId, amountMinor: assessment.amountMinor, currency: assessment.currency, actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.payment.create', 'payment', payment.paymentId, { courtId: assessment.courtId, assessmentId, amountMinor: payment.amountMinor, currency: payment.currency });
+    await this._audit(actor, 'finance.payment.create', 'payment', payment.paymentId, { courtId: assessment.courtId, assessmentId, amountMinor: payment.amountMinor, currency: payment.currency });
     return payment;
   }
 
@@ -191,7 +191,7 @@ class PersistentDciecmsService {
     if (!String(providerReference || '').trim()) throw new ValidationError('providerReference is required');
     if (payment.status !== 'PENDING') throw new ConflictError(`Payment cannot be confirmed from status ${payment.status}`);
     const confirmed = await this.repository.confirmPayment({ paymentId, providerReference: String(providerReference).trim(), actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.payment.confirm', 'payment', paymentId, { courtId: payment.courtId, providerReference: String(providerReference).trim() });
+    await this._audit(actor, 'finance.payment.confirm', 'payment', paymentId, { courtId: payment.courtId, providerReference: String(providerReference).trim() });
     return confirmed;
   }
 
@@ -203,7 +203,7 @@ class PersistentDciecmsService {
     const existing = await this.repository.getReceiptByPayment(paymentId);
     if (existing) return existing;
     const receipt = await this.repository.createReceipt({ receiptId: randomUUID(), receiptNumber: `RCT-${Date.now()}-${Math.floor(Math.random() * 10000)}`, paymentId, courtId: payment.courtId, amountMinor: payment.amountMinor, currency: payment.currency, actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.receipt.issue', 'receipt', receipt.receiptId, { courtId: payment.courtId, paymentId });
+    await this._audit(actor, 'finance.receipt.issue', 'receipt', receipt.receiptId, { courtId: payment.courtId, paymentId });
     return receipt;
   }
 
@@ -213,7 +213,7 @@ class PersistentDciecmsService {
     authorize(actor, 'finance.reconciliation.create', { courtId: payment.courtId });
     if (payment.status !== 'CONFIRMED') throw new ConflictError(`Reconciliation requires CONFIRMED payment, got ${payment.status}`);
     const reconciliation = await this.repository.createReconciliation({ reconciliationId: randomUUID(), paymentId, courtId: payment.courtId, actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.reconciliation.create', 'reconciliation', reconciliation.reconciliationId, { courtId: payment.courtId, paymentId });
+    await this._audit(actor, 'finance.reconciliation.create', 'reconciliation', reconciliation.reconciliationId, { courtId: payment.courtId, paymentId });
     return reconciliation;
   }
 
@@ -224,7 +224,7 @@ class PersistentDciecmsService {
     if (reconciliation.status !== 'PREPARED') throw new ConflictError(`Reconciliation cannot be certified from status ${reconciliation.status}`);
     if (reconciliation.preparedBy === actor.userId) throw new AccessDeniedError('Segregation of duties: the maker cannot certify the same reconciliation');
     const certified = await this.repository.certifyReconciliation({ reconciliationId, actorSubject: actor.userId, at: new Date().toISOString() });
-    this._audit(actor, 'finance.reconciliation.certify', 'reconciliation', reconciliationId, { courtId: reconciliation.courtId, paymentId: reconciliation.paymentId });
+    await this._audit(actor, 'finance.reconciliation.certify', 'reconciliation', reconciliationId, { courtId: reconciliation.courtId, paymentId: reconciliation.paymentId });
     return certified;
   }
 
@@ -242,7 +242,7 @@ class PersistentDciecmsService {
     const assessment = await this.repository.getFeeAssessment(payment.assessmentId);
     if (!assessment || assessment.filingId !== filingId) throw new ConflictError('Payment assessment does not belong to the filing');
     const opened = await this.repository.openCaseFromConfirmedPayment({ caseId: randomUUID(), filingId, paymentId, courtId: filing.courtId, caseTypeCode: filing.caseTypeCode, actorSubject: actor.userId, openedAt: new Date().toISOString() });
-    this._audit(actor, 'case.open', 'case', opened.caseId, { courtId: filing.courtId, filingId, paymentId, caseNumber: opened.caseNumber });
+    await this._audit(actor, 'case.open', 'case', opened.caseId, { courtId: filing.courtId, filingId, paymentId, caseNumber: opened.caseNumber });
     return opened;
   }
 }
