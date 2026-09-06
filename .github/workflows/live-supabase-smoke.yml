@@ -26,7 +26,7 @@ jobs:
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '24'
 
       - name: Require protected database secret
         shell: bash
@@ -36,20 +36,8 @@ jobs:
             exit 1
           fi
 
-      - name: Diagnose database target safely
-        shell: bash
-        run: |
-          node - <<'NODE'
-          const u = new URL(process.env.DATABASE_URL);
-          console.log(`db_user=${decodeURIComponent(u.username)}`);
-          console.log(`db_host=${u.hostname}`);
-          console.log(`db_port=${u.port || '5432'}`);
-          console.log(`db_name=${u.pathname.replace(/^\//, '')}`);
-          NODE
-
       - name: Install backend dependencies
         run: npm install --ignore-scripts --no-audit --no-fund
 
-      # Verify transactional live smoke after PNG daily-list timezone correction.
       - name: Run transactional DCIECMS live smoke
         run: npm run smoke:live
