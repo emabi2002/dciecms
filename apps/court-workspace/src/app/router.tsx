@@ -5,6 +5,7 @@ import { FilingsPage } from '../pages/FilingsPage';
 import { FilingReviewPage } from '../pages/FilingReviewPage';
 import { PaymentsPage } from '../pages/PaymentsPage';
 import { CasesPage } from '../pages/CasesPage';
+import { MyCasesPage } from '../pages/MyCasesPage';
 import { NotFoundPage } from '../pages/NotFoundPage';
 
 export const router = createBrowserRouter([
@@ -17,6 +18,7 @@ export const router = createBrowserRouter([
       { path: 'filings/:filingId', element: <FilingReviewPage /> },
       { path: 'payments', element: <PaymentsPage /> },
       { path: 'cases', element: <CasesPage /> },
+      { path: 'judicial/my-cases', element: <MyCasesPage /> },
       { path: '*', element: <NotFoundPage /> }
     ]
   }
