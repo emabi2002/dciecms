@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS notifications.notifications (
   template_code varchar(100) NOT NULL CHECK (length(btrim(template_code)) > 0),
   event_type varchar(120) NOT NULL CHECK (length(btrim(event_type)) > 0),
   resource_id varchar(255) NOT NULL CHECK (length(btrim(resource_id)) > 0),
+  idempotency_key varchar(64) NOT NULL UNIQUE,
   status varchar(20) NOT NULL DEFAULT 'QUEUED',
   created_by_subject varchar(255) NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
@@ -17,6 +18,7 @@ CREATE TABLE IF NOT EXISTS notifications.notifications (
   delivered_at timestamptz,
   CONSTRAINT notification_channel_ck CHECK (channel IN ('EMAIL','SMS')),
   CONSTRAINT notification_status_ck CHECK (status IN ('QUEUED','SENDING','DELIVERED','FAILED')),
+  CONSTRAINT notification_idempotency_key_ck CHECK (idempotency_key ~ '^[a-f0-9]{64}$'),
   CONSTRAINT notification_delivery_time_ck CHECK (status <> 'DELIVERED' OR delivered_at IS NOT NULL)
 );
 
