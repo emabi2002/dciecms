@@ -1,0 +1,14 @@
+[build]
+  base = "apps/court-workspace"
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "20"
+  VITE_DCIECMS_API_BASE_URL = "https://dciecms-api-staging.invalid"
+  VITE_DCIECMS_DEV_IDENTITY = "false"
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
