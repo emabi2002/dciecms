@@ -55,7 +55,8 @@ async function createOidcActorResolver(config, dependencies = {}) {
       const { payload } = await jose.jwtVerify(token, keyResolver, {
         issuer: config.issuer,
         audience: config.audience,
-        algorithms: config.algorithms
+        algorithms: config.algorithms,
+        requiredClaims: ['exp']
       });
       return resolveActorFromVerifiedClaims(payload);
     } catch (error) {
