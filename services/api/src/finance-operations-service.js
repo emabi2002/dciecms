@@ -1,9 +1,9 @@
 'use strict';
 const { authorize } = require('../../../packages/rbac');
 const { NotFoundError } = require('./dciecms-service');
-const { PersistentDciecmsService } = require('./persistent-dciecms-service');
+const { JudicialWorkbenchService } = require('./judicial-workbench-service');
 
-class FinanceOperationsService extends PersistentDciecmsService {
+class FinanceOperationsService extends JudicialWorkbenchService {
   async listFinanceQueue(actor, filters = {}) {
     authorize(actor, 'finance.payment.view', {});
     const rows = await this.repository.listFinanceQueue({
