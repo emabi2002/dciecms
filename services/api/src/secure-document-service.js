@@ -62,6 +62,11 @@ function callerControlsStorage(input = {}) {
     .some(key => input[key] !== undefined && input[key] !== null);
 }
 
+function requestedClassification(value) {
+  const normalized = String(value ?? '').trim().toUpperCase();
+  return normalized || null;
+}
+
 function normalizeClock(clock) {
   if (typeof clock === 'function') return clock;
   if (clock && typeof clock.now === 'function') return () => clock.now();
@@ -158,6 +163,24 @@ class SecureDocumentService {
     }
   }
 
+  _authorizeInitialClassification(actor, courtId, classification) {
+    const requested = requestedClassification(classification);
+    if (requested && requested !== 'CONFIDENTIAL') {
+      authorize(actor, 'document.classification.change', { courtId });
+    }
+    return requested || 'CONFIDENTIAL';
+  }
+
+  _authorizeReplacementClassification(actor, original, classification) {
+    const originalClassification = requestedClassification(original?.classification) || 'CONFIDENTIAL';
+    const requested = requestedClassification(classification);
+    const target = requested || originalClassification;
+    if (target !== originalClassification) {
+      authorize(actor, 'document.classification.change', { courtId: original.courtId });
+    }
+    return target;
+  }
+
   async _filingRelationshipForDocument(actor, document) {
     const filing = await this._filing(document.filingId);
     if (filing.courtId !== document.courtId) {
@@ -214,7 +237,8 @@ class SecureDocumentService {
     const filing = await this._filing(filingId);
     authorize(actor, 'filing.view', { courtId: filing.courtId });
     this._assertPublicFilingRelationship(actor, filing);
-    return this._initiate(actor, filing, input);
+    const classification = this._authorizeInitialClassification(actor, filing.courtId, input.classification);
+    return this._initiate(actor, filing, { ...input, classification });
   }
 
   async finalizeDocumentUpload(actor, documentId) {
@@ -311,9 +335,10 @@ class SecureDocumentService {
     authorizeDocumentClassification(actor, original, 'view');
     authorize(actor, 'document.upload', { courtId: original.courtId });
     if (original.status !== 'ACTIVE') throw new SecureDocumentConflictError('Only an ACTIVE document can be replaced');
+    const classification = this._authorizeReplacementClassification(actor, original, input.classification);
     return this._initiate(actor, filing, {
       ...input,
-      classification: input.classification ?? original.classification
+      classification
     }, {
       versionNumber: Number(original.versionNumber || 1) + 1,
       priorDocumentId: original.documentId,
