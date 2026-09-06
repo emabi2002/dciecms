@@ -91,8 +91,6 @@ class SecureDocumentService {
   } = {}) {
     requiredServiceDependency(repository, 'getDocument', 'repository');
     requiredServiceDependency(repository, 'getFiling', 'repository');
-    requiredServiceDependency(repository, 'createDocumentUploadIntent', 'repository');
-    requiredServiceDependency(repository, 'finalizeDocumentAndCreateScanJob', 'repository');
     requiredServiceDependency(auditStore, 'append', 'auditStore');
     assertDocumentStorage(storage);
     if (typeof uuid !== 'function') throw new TypeError('uuid must be a function');
@@ -151,6 +149,7 @@ class SecureDocumentService {
   }
 
   async _initiate(actor, filing, input, { versionNumber = 1, priorDocumentId = null, action = 'document.upload.initiate' } = {}) {
+    requiredServiceDependency(this.repository, 'createDocumentUploadIntent', 'repository');
     if (callerControlsStorage(input)) {
       throw new DocumentPolicyError('Caller-controlled storage or object key is not allowed');
     }
@@ -199,6 +198,7 @@ class SecureDocumentService {
   }
 
   async finalizeDocumentUpload(actor, documentId) {
+    requiredServiceDependency(this.repository, 'finalizeDocumentAndCreateScanJob', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.upload', { courtId: document.courtId });
     if (!document.storageObjectKey || !Number.isSafeInteger(Number(document.expectedSizeBytes)) || Number(document.expectedSizeBytes) <= 0) {
@@ -259,6 +259,7 @@ class SecureDocumentService {
   }
 
   async changeDocumentClassification(actor, documentId, { classification, reason } = {}) {
+    requiredServiceDependency(this.repository, 'changeDocumentClassification', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.classification.change', { courtId: document.courtId });
     requiredReason(reason);
@@ -298,6 +299,7 @@ class SecureDocumentService {
   }
 
   async supersedeDocument(actor, documentId, replacementDocumentId, reason) {
+    requiredServiceDependency(this.repository, 'supersedeDocument', 'repository');
     const original = await this._document(documentId);
     const replacement = await this._document(replacementDocumentId);
     authorize(actor, 'document.supersede', { courtId: original.courtId });
@@ -322,6 +324,7 @@ class SecureDocumentService {
   }
 
   async withdrawDocument(actor, documentId, reason) {
+    requiredServiceDependency(this.repository, 'withdrawDocument', 'repository');
     const document = await this._document(documentId);
     authorize(actor, 'document.withdraw', { courtId: document.courtId });
     const normalizedReason = requiredReason(reason);
