@@ -94,14 +94,20 @@ function authorizeDocumentClassification(actor, document, operation = 'view') {
     throw new DocumentPolicyError('Document classification is not allowed');
   }
 
-  let explicitGrant;
-  if (classification === 'RESTRICTED') explicitGrant = 'document.restricted.view';
-  if (classification === 'SEALED') explicitGrant = 'document.sealed.view';
+  const courtId = document?.courtId;
+  authorize(actor, 'document.view', { courtId });
 
-  authorize(actor, 'document.view', {
-    courtId: document?.courtId,
-    ...(explicitGrant ? { explicitGrant } : {})
-  });
+  if (classification === 'INTERNAL') {
+    authorize(actor, 'document.internal.view', { courtId });
+  }
+
+  if (classification === 'RESTRICTED') {
+    authorize(actor, 'document.view', { courtId, explicitGrant: 'document.restricted.view' });
+  }
+  if (classification === 'SEALED') {
+    authorize(actor, 'document.view', { courtId, explicitGrant: 'document.sealed.view' });
+  }
+
   return true;
 }
 
