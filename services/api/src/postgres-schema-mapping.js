@@ -16,13 +16,16 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'finance.payments': 'dciecms_test.finance_payments',
   'finance.receipts': 'dciecms_test.finance_receipts',
   'finance.reconciliations': 'dciecms_test.finance_reconciliations',
+  'finance.payment_exceptions': 'dciecms_test.finance_payment_exceptions',
   'case_mgmt.case_number_sequences': 'dciecms_test.case_number_sequences',
   'case_mgmt.cases': 'dciecms_test.cases',
   'judicial.hearings': 'dciecms_test.judicial_hearings',
   'judicial.hearing_adjournments': 'dciecms_test.judicial_hearing_adjournments',
   'judicial.hearing_appearances': 'dciecms_test.judicial_hearing_appearances',
   'judicial.proceeding_records': 'dciecms_test.judicial_proceeding_records',
-  'judicial.judgments': 'dciecms_test.judicial_judgments'
+  'judicial.judgments': 'dciecms_test.judicial_judgments',
+  'notifications.delivery_attempts': 'dciecms_test.notification_delivery_attempts',
+  'notifications.notifications': 'dciecms_test.notifications'
 });
 
 function rewriteSql(text, profile = 'logical') {
