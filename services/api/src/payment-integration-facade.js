@@ -19,7 +19,7 @@ function installPaymentIntegrationFacade(TargetClass) {
       configurable: false,
       enumerable: false,
       writable: false,
-      value: function paymentIntegrationDelegate(...args) {
+      value: async function paymentIntegrationDelegate(...args) {
         const service = requirePaymentIntegrationService(this);
         if (typeof service[method] !== 'function') {
           throw new TypeError(`Payment integration must expose ${method}()`);
