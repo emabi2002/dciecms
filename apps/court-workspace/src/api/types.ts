@@ -73,6 +73,24 @@ export type Receipt = {
   issuedAt?: string;
 };
 
+export type RefundRequest = {
+  refundRequestId: string;
+  paymentId: string;
+  courtId: string;
+  amountMinor: number;
+  currency: string;
+  reason: string;
+  status: string;
+  requestedBy?: string;
+  requestedAt?: string;
+  decidedBy?: string | null;
+  decidedAt?: string | null;
+  decisionReason?: string | null;
+  providerRefundReference?: string | null;
+  completedBy?: string | null;
+  completedAt?: string | null;
+};
+
 export type Reconciliation = {
   reconciliationId: string;
   paymentId: string;
@@ -81,6 +99,11 @@ export type Reconciliation = {
   createdBy?: string;
   certifiedBy?: string | null;
   certifiedAt?: string | null;
+  exceptionCode?: string | null;
+  exceptionNote?: string | null;
+  rejectionReason?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
 };
 
 export type CaseRecord = {
