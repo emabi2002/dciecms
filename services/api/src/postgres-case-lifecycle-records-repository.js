@@ -264,7 +264,7 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
         AND rc.legal_hold=false AND rc.disposition_eligible_at IS NOT NULL
         AND rc.disposition_eligible_at <= $5
         AND NOT EXISTS (SELECT 1 FROM document_guard dg WHERE dg.legal_hold=true)
-      FOR UPDATE OF rc
+      FOR UPDATE OF rc, c
     ), requested AS (
       INSERT INTO records.disposal_requests
         (disposal_request_id,case_record_control_id,case_id,court_id,status,reason,requested_by_subject,requested_at)
@@ -289,12 +289,17 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
   };
 
   proto.approveDisposalRequest = async function approveDisposalRequest({ disposalRequestId, actorSubject, decisionReason, at }) {
-    const result = await this.db.query(`WITH request_case AS (
+    const result = await this.db.query(`WITH request_case AS MATERIALIZED (
       SELECT dr.case_id
       FROM records.disposal_requests dr
       WHERE dr.disposal_request_id=$1
-      FOR UPDATE OF dr
-    ), document_guard AS (
+    ), control_guard AS MATERIALIZED (
+      SELECT rc.case_record_control_id,rc.case_id
+      FROM records.case_record_controls rc
+      JOIN case_mgmt.cases c ON c.case_id=rc.case_id
+      JOIN request_case rq ON rq.case_id=rc.case_id
+      FOR UPDATE OF rc, c
+    ), document_guard AS MATERIALIZED (
       SELECT d.document_id,d.legal_hold
       FROM documents.documents d
       JOIN case_mgmt.cases cg ON cg.filing_id=d.filing_id
@@ -305,6 +310,7 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
       SET status='APPROVED',decided_by_subject=$2,decided_at=$4,decision_reason=$3
       FROM records.case_record_controls rc
       JOIN case_mgmt.cases c ON c.case_id=rc.case_id
+      JOIN control_guard guard ON guard.case_record_control_id=rc.case_record_control_id
       WHERE dr.disposal_request_id=$1
         AND dr.case_record_control_id=rc.case_record_control_id
         AND dr.status='REQUESTED'
@@ -329,14 +335,28 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
   };
 
   proto.rejectDisposalRequest = async function rejectDisposalRequest({ disposalRequestId, actorSubject, decisionReason, at }) {
-    const result = await this.db.query(`WITH rejected AS (
+    const result = await this.db.query(`WITH request_case AS MATERIALIZED (
+      SELECT dr.case_id
+      FROM records.disposal_requests dr
+      WHERE dr.disposal_request_id=$1
+    ), control_guard AS MATERIALIZED (
+      SELECT rc.case_record_control_id,rc.case_id
+      FROM records.case_record_controls rc
+      JOIN case_mgmt.cases c ON c.case_id=rc.case_id
+      JOIN request_case rq ON rq.case_id=rc.case_id
+      FOR UPDATE OF rc, c
+    ), rejected AS (
       UPDATE records.disposal_requests dr
       SET status='REJECTED',decided_by_subject=$2,decided_at=$4,decision_reason=$3
       FROM records.case_record_controls rc
+      JOIN case_mgmt.cases c ON c.case_id=rc.case_id
+      JOIN control_guard guard ON guard.case_record_control_id=rc.case_record_control_id
       WHERE dr.disposal_request_id=$1
         AND dr.case_record_control_id=rc.case_record_control_id
         AND dr.status='REQUESTED'
         AND dr.requested_by_subject <> $2
+        AND c.status='CLOSED'
+        AND rc.status='DISPOSAL_REQUESTED'
       RETURNING dr.${DISPOSAL_COLUMNS.replaceAll(',', ',dr.')}
     ), control AS (
       UPDATE records.case_record_controls rc
