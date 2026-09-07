@@ -18,6 +18,7 @@ const expectedMutations = [
   'assessFilingFee',
   'createPayment',
   'confirmPayment',
+  'confirmPaymentFromCallback',
   'issueReceipt',
   'createReconciliation',
   'certifyReconciliation',
@@ -96,6 +97,27 @@ test('download authorization is transaction-wrapped because it persists audit ev
   const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
   assert.deepEqual(await wrapped.authorizeDocumentDownload(),{ok:true});
   assert.deepEqual(calls,['BEGIN','authorize','COMMIT']);
+});
+
+test('payment callback confirmation is transaction-wrapped', async () => {
+  const calls = [];
+  const service = {
+    async confirmPaymentFromCallback() {
+      calls.push('callback');
+      return { status: 'CONFIRMED' };
+    }
+  };
+  const wrapped = createTransactionalService(service, {
+    async withTransaction(work) {
+      calls.push('BEGIN');
+      const value = await work();
+      calls.push('COMMIT');
+      return value;
+    }
+  });
+
+  assert.deepEqual(await wrapped.confirmPaymentFromCallback(), { status: 'CONFIRMED' });
+  assert.deepEqual(calls, ['BEGIN', 'callback', 'COMMIT']);
 });
 
 test('transactional service preserves prototype identity and exposes service properties', () => {
