@@ -12,7 +12,7 @@ class CaptureDb {
   async query(text, params = []) { this.calls.push({ text, params }); return { rows: this.rows }; }
 }
 
-test('migration 0016 adds fee schedules, adjustments, refunds and finalized reconciliation protection', () => {
+test('migration 0016 adds fee schedules, adjustments, refunds and finalized finance evidence protection', () => {
   const sql = fs.readFileSync(migrationPath,'utf8');
   assert.match(sql,/CREATE TABLE IF NOT EXISTS finance\.fee_schedules/i);
   assert.match(sql,/CREATE TABLE IF NOT EXISTS finance\.payment_adjustments/i);
@@ -21,6 +21,9 @@ test('migration 0016 adds fee schedules, adjustments, refunds and finalized reco
   assert.match(sql,/ADD COLUMN IF NOT EXISTS rejection_reason/i);
   assert.match(sql,/CREATE TRIGGER finance_reconciliation_finalized_immutable_trg/i);
   assert.match(sql,/OLD\.status IN \('CERTIFIED','REJECTED'\)/i);
+  assert.match(sql,/CREATE OR REPLACE FUNCTION finance\.prevent_issued_receipt_mutation\(\)/i);
+  assert.match(sql,/CREATE TRIGGER finance_receipt_issued_immutable_trg/i);
+  assert.match(sql,/OLD\.status='ISSUED'/i);
   assert.doesNotMatch(sql,/\bDROP\s+TABLE\b/i);
   assert.doesNotMatch(sql,/\bDELETE\s+FROM\b/i);
 });
