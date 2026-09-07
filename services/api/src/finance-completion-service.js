@@ -7,7 +7,7 @@ const { ConflictError, NotFoundError, ValidationError } = require('./dciecms-ser
 const ADJUSTMENT_TYPES = new Set(['WAIVER','EXEMPTION','CORRECTION','OTHER_ADJUSTMENT']);
 const FEE_SCHEDULE_STATES = new Set(['DRAFT','ACTIVE','RETIRED']);
 const PAYMENT_QUEUE_STATES = new Set(['PENDING','CONFIRMED','FAILED','CANCELLED','REFUNDED','REVERSED']);
-const REFUND_QUEUE_STATES = new Set(['REQUESTED','APPROVED','REJECTED','COMPLETED']);
+const REFUND_QUEUE_STATES = new Set(['REQUESTED','APPROVED','REJECTED','COMPLETED','CANCELLED']);
 
 function normalizeClock(clock) {
   if (typeof clock === 'function') return clock;
