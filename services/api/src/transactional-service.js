@@ -47,7 +47,18 @@ const MUTATING_SERVICE_METHODS = Object.freeze([
   'releaseCaseLegalHold',
   'requestCaseRecordDisposal',
   'approveCaseRecordDisposal',
-  'rejectCaseRecordDisposal'
+  'rejectCaseRecordDisposal',
+  'createFeeSchedule',
+  'activateFeeSchedule',
+  'retireFeeSchedule',
+  'requestPaymentAdjustment',
+  'approvePaymentAdjustment',
+  'rejectPaymentAdjustment',
+  'requestRefund',
+  'approveRefund',
+  'rejectRefund',
+  'completeRefund',
+  'rejectReconciliation'
 ]);
 const MUTATING_SERVICE_METHOD_SET = new Set(MUTATING_SERVICE_METHODS);
 
