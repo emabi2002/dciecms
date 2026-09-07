@@ -5,6 +5,11 @@ const {
   AuthenticationUnavailableError
 } = require('../../../packages/auth');
 const { NotFoundError, ConflictError, ValidationError } = require('./dciecms-service');
+const { DocumentPolicyError } = require('./document-policy');
+const {
+  SecureDocumentNotFoundError,
+  SecureDocumentConflictError
+} = require('./secure-document-service');
 
 async function readJson(req) {
   let body = '';
@@ -31,6 +36,9 @@ function mapError(error, res) {
     return send(res, 503, { error: 'authentication_unavailable' });
   }
   if (error instanceof AccessDeniedError) return send(res, 403, { error: 'forbidden' });
+  if (error instanceof SecureDocumentNotFoundError) return send(res, 404, { error: 'not_found' });
+  if (error instanceof SecureDocumentConflictError) return send(res, 409, { error: 'conflict', message: error.message });
+  if (error instanceof DocumentPolicyError) return send(res, 422, { error: 'validation_error', message: error.message });
   if (error instanceof NotFoundError) return send(res, 404, { error: 'not_found' });
   if (error instanceof ConflictError) return send(res, 409, { error: 'conflict', message: error.message });
   if (error instanceof ValidationError) return send(res, 422, { error: 'validation_error', message: error.message });
@@ -60,10 +68,46 @@ function createHttpApp(service, actorResolver) {
       const judicialJudgmentGet = path.match(/^\/judicial\/judgments\/([^/]+)$/);
       if (req.method === 'GET' && judicialJudgmentGet) return send(res, 200, await service.getJudgment(actor, judicialJudgmentGet[1]));
 
+      const documentUpload = path.match(/^\/filings\/([^/]+)\/documents\/uploads$/);
+      if (req.method === 'POST' && documentUpload) {
+        return send(res, 201, await service.initiateDocumentUpload(actor, documentUpload[1], await readJson(req)), { 'cache-control': 'no-store' });
+      }
+      const documentFinalize = path.match(/^\/documents\/([^/]+)\/finalize$/);
+      if (req.method === 'POST' && documentFinalize) {
+        await readJson(req);
+        return send(res, 200, await service.finalizeDocumentUpload(actor, documentFinalize[1]));
+      }
+      const documentDownload = path.match(/^\/documents\/([^/]+)\/download-authorizations$/);
+      if (req.method === 'POST' && documentDownload) {
+        await readJson(req);
+        return send(res, 200, await service.authorizeDocumentDownload(actor, documentDownload[1]), { 'cache-control': 'no-store' });
+      }
+      const documentClassification = path.match(/^\/documents\/([^/]+)\/classification$/);
+      if (req.method === 'POST' && documentClassification) {
+        return send(res, 200, await service.changeDocumentClassification(actor, documentClassification[1], await readJson(req)));
+      }
+      const documentReplacement = path.match(/^\/documents\/([^/]+)\/replacements$/);
+      if (req.method === 'POST' && documentReplacement) {
+        return send(res, 201, await service.createReplacementDocument(actor, documentReplacement[1], await readJson(req)), { 'cache-control': 'no-store' });
+      }
+      const documentSupersede = path.match(/^\/documents\/([^/]+)\/supersede$/);
+      if (req.method === 'POST' && documentSupersede) {
+        const body = await readJson(req);
+        return send(res, 200, await service.supersedeDocument(actor, documentSupersede[1], body.replacementDocumentId, body.reason));
+      }
+      const documentWithdraw = path.match(/^\/documents\/([^/]+)\/withdraw$/);
+      if (req.method === 'POST' && documentWithdraw) {
+        const body = await readJson(req);
+        return send(res, 200, await service.withdrawDocument(actor, documentWithdraw[1], body.reason));
+      }
+      const documentRetryScan = path.match(/^\/documents\/([^/]+)\/retry-scan$/);
+      if (req.method === 'POST' && documentRetryScan) {
+        await readJson(req);
+        return send(res, 200, await service.retryDocumentScan(actor, documentRetryScan[1]));
+      }
+
       const filingGet = path.match(/^\/filings\/([^/]+)$/);
       if (req.method === 'GET' && filingGet) return send(res, 200, await service.getFiling(actor, filingGet[1]));
-      const docPost = path.match(/^\/filings\/([^/]+)\/documents$/);
-      if (req.method === 'POST' && docPost) return send(res, 201, await service.registerDocument(actor, docPost[1], await readJson(req)));
       const submitPost = path.match(/^\/filings\/([^/]+)\/submit$/);
       if (req.method === 'POST' && submitPost) { const body = await readJson(req); return send(res, 200, await service.submitFiling(actor, submitPost[1], req.headers['idempotency-key'] || body.idempotencyKey)); }
       const validatePost = path.match(/^\/filings\/([^/]+)\/validate$/);

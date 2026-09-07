@@ -10,6 +10,7 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'case_mgmt.parties': 'dciecms_test.case_parties',
   'registry.filings': 'dciecms_test.registry_filings',
   'documents.documents': 'dciecms_test.documents',
+  'documents.scan_jobs': 'dciecms_test.document_scan_jobs',
   'audit.audit_events': 'dciecms_test.audit_events',
   'workflow.idempotency_records': 'dciecms_test.workflow_idempotency_records',
   'workflow.workflow_tasks': 'dciecms_test.workflow_tasks',

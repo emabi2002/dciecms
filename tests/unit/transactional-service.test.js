@@ -33,7 +33,15 @@ const expectedMutations = [
   'updateJudgmentDraft',
   'reviewJudgment',
   'signJudgment',
-  'issueJudgment'
+  'issueJudgment',
+  'initiateDocumentUpload',
+  'finalizeDocumentUpload',
+  'authorizeDocumentDownload',
+  'changeDocumentClassification',
+  'createReplacementDocument',
+  'supersedeDocument',
+  'withdrawDocument',
+  'retryDocumentScan'
 ];
 
 test('transactional service registry contains every current HTTP mutation method', () => {
@@ -80,6 +88,14 @@ test('createTransactionalService wraps mutations but leaves reads outside transa
     'END-WRAPPER',
     'read:service:b'
   ]);
+});
+
+test('download authorization is transaction-wrapped because it persists audit evidence', async () => {
+  const calls=[];
+  const service={async authorizeDocumentDownload(){calls.push('authorize');return {ok:true};}};
+  const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
+  assert.deepEqual(await wrapped.authorizeDocumentDownload(),{ok:true});
+  assert.deepEqual(calls,['BEGIN','authorize','COMMIT']);
 });
 
 test('transactional service preserves prototype identity and exposes service properties', () => {

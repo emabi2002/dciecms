@@ -5,7 +5,7 @@
 
 ## Integration status
 
-The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure, and a provider-neutral production OIDC/JWT authentication boundary. The authentication boundary verifies signed bearer credentials and fails closed, but it does not register or activate a real government IdP, perform browser login, deploy production configuration, execute a live database migration or change production infrastructure.
+The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure, a provider-neutral production OIDC/JWT authentication boundary, and a provider-neutral secure document pipeline. The authentication boundary verifies signed bearer credentials and fails closed. The secure document boundary enforces private-object lifecycle, authoritative integrity evidence, malware-scan gating, record/classification authorization and immutable document history. Neither boundary registers or activates a real government/provider integration, deploys production credentials, executes a live database migration or changes production infrastructure.
 
 ## Delivered capabilities
 
@@ -14,7 +14,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - deny-by-default RBAC and court scoping
 - party creation and filing draft creation
 - controlled case-type validation
-- secure document registration in quarantine with SHA-256 checksum validation
+- legacy document metadata registration in quarantine with SHA-256 checksum validation
 - idempotent filing submission
 - court-scoped Registry queue
 - Registry workflow task creation/completion
@@ -57,7 +57,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - `AsyncLocalStorage` isolates concurrent transaction contexts
 - repository SQL and `PostgresAuditStore` SQL share the same active physical client during a mutating service operation
 - existing repository-local transaction blocks are contained inside the outer service transaction and cannot prematurely commit or release it
-- immutable reviewed transaction registry covers the current Registry, filing, document-registration, finance, case-opening, judicial, hearing, proceeding and judgment mutation methods
+- immutable reviewed transaction registry covers the current Registry, filing, document, finance, case-opening, judicial, hearing, proceeding and judgment mutation methods
 - successful business mutation and awaited application audit evidence commit together
 - audit insert failure rolls back the preceding business mutation
 - read-only operations remain outside the mutation transaction wrapper
@@ -97,6 +97,30 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - Court Workspace suppresses all development identity headers whenever the token-provider boundary is configured, including when that provider temporarily returns no token
 - browser login/PKCE, approved government IdP registration, live issuer/JWKS configuration, production credentials and production activation remain outside this delivered boundary
 
+### Secure document pipeline
+- migration `0013_secure_document_pipeline.sql` extends `documents.documents` with server-owned private object identity, expected/authoritative integrity evidence, detected MIME type, scan/release evidence, immutable version lineage, withdrawal evidence, legal-hold fields and governed-disposition eligibility
+- `documents.scan_jobs` provides a dedicated durable malware-scan queue with bounded attempts, due times, worker leases, stale-lease recovery, sanitized result/error codes and terminal/dead-letter state
+- isolated Supabase test-profile migration `db/supabase/20260907_dciecms_test_0013.sql` mirrors the secure-document schema changes without implying live execution
+- API-created upload intents generate the document ID and quarantine object key on the server; callers cannot supply an object key, storage URL, upload URL or download URL
+- storage is represented by a provider-neutral adapter contract that must support private object upload grants, authoritative metadata reads, download grants and production capability attestation
+- finalization trusts storage-adapter evidence, not caller-supplied checksum or MIME evidence; expected size, SHA-256 and detected MIME type must match policy before a scan job is created
+- finalization, authoritative document mutation and scan-job creation are transactionally coupled in PostgreSQL and roll back together on failure
+- documents remain `QUARANTINED` while scanning; only a normalized `CLEAN` result for the exact quarantined record may set `ACTIVE` and `released_at`
+- infected, unsupported, malformed or scanner-error outcomes fail closed and cannot release a document
+- scan worker claims bounded due/stale jobs using lease ownership and persists only normalized/sanitized scanner evidence; raw provider diagnostics are excluded from audit evidence
+- download authorization requires base `document.view`, court scope, filing-record relationship, classification authority and `ACTIVE`/released lifecycle state before a short-lived provider-neutral grant is returned
+- `PUBLIC` actors may access only documents belonging to filings created by their verified subject, even when another filing shares the same court
+- `RESTRICTED` and `SEALED` documents require corresponding explicit grants in addition to base permission and court scope
+- signed upload/download grants remain ephemeral response material and are not persisted in document rows or application audit evidence
+- classification changes, replacements, superseding, withdrawal and scan retry are explicit controlled service operations with application audit evidence
+- replacement creates a new document/version rather than mutating finalized content; superseded and withdrawn records remain historical evidence
+- no normal service/repository hard-delete operation exists for secure documents
+- legal hold is a fail-closed veto on governed-disposition eligibility; the repository work does not add a direct destructive disposal endpoint
+- secure document service mutations that persist application audit evidence are registered in the shared outer transaction boundary
+- `DCIECMS_DOCUMENT_PIPELINE_MODE` is fail closed: non-production may use `development`, production defaults to `disabled`, production forbids `development`, and production `enabled` requires approved injected storage and scanner adapters
+- production storage must attest private-object controls and encryption at rest; development memory storage cannot satisfy the production contract
+- no real production storage provider, bucket, KMS configuration, malware-scanner provider, provider credential, permanent worker schedule, live migration or production activation has been performed
+
 ## Verification controls present in the repository
 - GitHub Actions CI using Node.js 20 for the application test/build runtime
 - backend regression test execution
@@ -104,7 +128,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - production frontend build verification
 - live Supabase smoke-test workflow
 - Supabase test migration bundle covering R0-R2 (`0001` through `0010`)
-- incremental Supabase isolated-test migrations for R3 (`0011`) and R5 (`0012`)
+- incremental Supabase isolated-test migrations for R3 (`0011`), R5 (`0012`) and secure documents (`0013`)
 - R4 transaction-manager regressions for commit, rollback and nested repository transaction handling
 - R4 runtime regressions proving business SQL and audit SQL use one client and that audit failure rolls back business mutation
 - R5 outbox regressions for idempotent enqueue, bounded/stale claims, worker ownership, retry/dead-letter transitions and dispatcher behavior
@@ -117,14 +141,23 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - startup regression proving production cannot listen with development authentication mode
 - Court Workspace regressions proving runtime Bearer injection and no fallback to development identity when the token provider is configured
 - token non-propagation and response-sanitization regressions proving raw bearer material/verifier internals are not exposed
+- secure-document policy tests for supported type/size/classification enforcement and authoritative size/checksum/detected-MIME validation
+- secure storage contract tests for private/encrypted production capability requirements and exact-object short-lived development grants
+- secure-document repository tests for upload intent, idempotent/conflicting finalization, state-conditional classification/supersede/withdraw transitions and absence of hard delete
+- scan-store/worker tests for lease ownership, CLEAN/INFECTED handling, retry/backoff, permanent failure, dead-letter recovery and fail-closed malformed/scanner-exception handling
+- HTTP secure-document tests for lifecycle route mapping, client integrity-evidence rejection and sanitized policy/access/conflict/provider failures
+- runtime tests proving development adapter composition, persistent shared repository/audit/scan-store composition, production default-disabled behavior and production refusal without approved adapters
+- transactional regressions proving secure-document mutation plus audit rollback and finalization plus scan-job rollback
+- centralized security regression gate proving signed-grant non-persistence, caller-controlled key rejection, quarantined/superseded/withdrawn denial, RESTRICTED grant enforcement, same-court cross-filer denial for `PUBLIC`, legal-hold disposition veto and provider/scanner diagnostic sanitization
 
-These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3 and R5 Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work. Likewise, the production authentication verifier is repository-delivered but no real identity platform has been registered or activated.
+These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3, R5 and secure-document `0013` Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work. Likewise, the authentication verifier and secure-document provider contracts are repository-delivered but no real identity platform, storage provider or malware scanner has been registered or activated.
 
 ## Intentionally outstanding / environment-dependent work
 - approved government IdP selection/registration, browser login/PKCE integration and live issuer/audience/JWKS configuration
 - approved permanent outbox worker scheduling/runtime and real idempotent provider handlers
-- approved production PostgreSQL/Supabase environment and controlled live migration execution
-- private object storage and malware scanning pipeline
+- approved production PostgreSQL/Supabase environment and controlled live migration execution, including secure-document migration `0013`
+- approved production private-object storage provider/bucket, encryption/KMS policy, storage credentials and secret injection
+- approved production malware-scanner provider, endpoint/security contract, credentials and permanent scan-worker scheduling
 - production payment-gateway callback/integration
 - email/SMS notification providers
 - government-agency adapters and external integration credentials
@@ -134,6 +167,8 @@ These controls do not by themselves constitute production deployment approval or
 
 ## Security boundary
 
-`x-dev-*` request headers are development-only scaffolding. They must never be accepted as production identity evidence. The production runtime now enforces OIDC bearer verification before actor construction and preserves server-side permission, court, record-relationship and confidentiality enforcement.
+`x-dev-*` request headers are development-only scaffolding. They must never be accepted as production identity evidence. The production runtime enforces OIDC bearer verification before actor construction and preserves server-side permission, court, record-relationship and confidentiality enforcement.
 
-The browser is not an authorization boundary. Registry workflow, request replay, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility continue to be enforced by the API and database layers.
+`DCIECMS_DOCUMENT_PIPELINE_MODE=development` is also non-production scaffolding. Production document handling defaults to disabled and cannot silently use memory storage or the scripted scanner. Production activation requires explicitly approved private/encrypted storage and malware-scanner adapters, external credentials supplied through approved secret management, controlled migration execution and an authorized deployment.
+
+The browser is not an authorization boundary. Registry workflow, request replay, document access/classification, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility continue to be enforced by the API and database layers.
