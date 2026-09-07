@@ -4,6 +4,7 @@ import { PaymentsPage } from './PaymentsPage';
 import {
   approveRefund,
   assessFee,
+  assessFeeBySchedule,
   certifyReconciliation,
   completeRefund,
   createPayment,
@@ -11,13 +12,16 @@ import {
   createReconciliation,
   getRefund,
   issueReceipt,
+  listFinancePayments,
   listReconciliationExceptions,
+  listRefunds,
   rejectRefund,
   requestRefund
 } from '../api/client';
 
 vi.mock('../api/client', () => ({
   assessFee: vi.fn(),
+  assessFeeBySchedule: vi.fn(),
   createPayment: vi.fn(),
   createPaymentSession: vi.fn(),
   issueReceipt: vi.fn(),
@@ -28,10 +32,13 @@ vi.mock('../api/client', () => ({
   approveRefund: vi.fn(),
   rejectRefund: vi.fn(),
   completeRefund: vi.fn(),
+  listFinancePayments: vi.fn(),
+  listRefunds: vi.fn(),
   listReconciliationExceptions: vi.fn()
 }));
 
 const mockedAssess = vi.mocked(assessFee);
+const mockedAssessBySchedule = vi.mocked(assessFeeBySchedule);
 const mockedCreatePayment = vi.mocked(createPayment);
 const mockedCreateSession = vi.mocked(createPaymentSession);
 const mockedReceipt = vi.mocked(issueReceipt);
@@ -42,16 +49,20 @@ const mockedGetRefund = vi.mocked(getRefund);
 const mockedApproveRefund = vi.mocked(approveRefund);
 const mockedRejectRefund = vi.mocked(rejectRefund);
 const mockedCompleteRefund = vi.mocked(completeRefund);
+const mockedPayments = vi.mocked(listFinancePayments);
+const mockedRefunds = vi.mocked(listRefunds);
 const mockedExceptions = vi.mocked(listReconciliationExceptions);
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockedPayments.mockResolvedValue([]);
+  mockedRefunds.mockResolvedValue([]);
   mockedExceptions.mockResolvedValue([]);
 });
 
 describe('Payments and finance controls', () => {
-  it('converts PGK display value to minor units for fee assessment', async () => {
-    mockedAssess.mockResolvedValue({ assessmentId: 'a1', filingId: 'f1', courtId: 'c1', amountMinor: 1250, currency: 'PGK', status: 'ASSESSED' });
+  it('converts PGK display value to minor units for legacy manual fee assessment', async () => {
+    mockedAssess.mockResolvedValue({ assessmentId: 'a1', filingId: 'f1', courtId: 'c1', feeScheduleId: null, amountMinor: 1250, currency: 'PGK', status: 'ASSESSED' });
     render(<PaymentsPage />);
 
     fireEvent.change(screen.getByLabelText('Filing ID'), { target: { value: 'f1' } });
@@ -60,6 +71,46 @@ describe('Payments and finance controls', () => {
 
     expect(await screen.findByText('ASSESSED')).toBeInTheDocument();
     expect(mockedAssess).toHaveBeenCalledWith('f1', 1250, 'PGK');
+  });
+
+  it('assesses from a configured fee schedule without browser-controlled money', async () => {
+    mockedAssessBySchedule.mockResolvedValue({ assessmentId: 'a-s1', filingId: 'f1', courtId: 'c1', feeScheduleId: 'fs-1', amountMinor: 1250, currency: 'PGK', status: 'ASSESSED' });
+    render(<PaymentsPage />);
+
+    fireEvent.change(screen.getByLabelText('Filing ID'), { target: { value: 'f1' } });
+    fireEvent.change(screen.getByLabelText('Fee schedule ID'), { target: { value: 'fs-1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Assess from fee schedule' }));
+
+    expect(await screen.findByText('ASSESSED')).toBeInTheDocument();
+    expect(mockedAssessBySchedule).toHaveBeenCalledWith('f1', 'fs-1');
+    expect(screen.getByText(/authoritative fee schedule/i)).toBeInTheDocument();
+  });
+
+  it('renders audited court-scoped collections and refund approval queues with maker-checker state', async () => {
+    mockedPayments.mockResolvedValue([
+      { paymentId: 'pay-q1', assessmentId: 'a1', courtId: 'c1', amountMinor: 2500, currency: 'PGK', status: 'PENDING', refundedAmountMinor: 0, createdBy: 'fin-maker' }
+    ]);
+    mockedRefunds.mockResolvedValue([
+      { refundRequestId: 'refund-q1', paymentId: 'pay-q2', courtId: 'c1', amountMinor: 500, currency: 'PGK', reason: 'Duplicate', status: 'REQUESTED', requestedBy: 'fin-maker' }
+    ]);
+    mockedGetRefund.mockResolvedValue({
+      refundRequestId: 'refund-q1', paymentId: 'pay-q2', courtId: 'c1', amountMinor: 500,
+      currency: 'PGK', reason: 'Duplicate', status: 'REQUESTED', requestedBy: 'fin-maker'
+    });
+    render(<PaymentsPage />);
+
+    expect(await screen.findByRole('heading', { name: 'Collections / payment status' })).toBeInTheDocument();
+    expect(await screen.findByText('pay-q1')).toBeInTheDocument();
+    expect(screen.getByText(/PENDING/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Refund approval queue' })).toBeInTheDocument();
+    expect(await screen.findByText('refund-q1')).toBeInTheDocument();
+    expect(screen.getByText(/Requested by fin-maker/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review refund refund-q1' }));
+    expect(await screen.findByText(/Maker: fin-maker/)).toBeInTheDocument();
+    expect(screen.getByText(/Checker: pending independent decision/)).toBeInTheDocument();
+    expect(mockedPayments).toHaveBeenCalledTimes(1);
+    expect(mockedRefunds).toHaveBeenCalledWith('REQUESTED');
   });
 
   it('progresses a pending payment into a provider-neutral checkout session without manual provider confirmation', async () => {
@@ -124,7 +175,7 @@ describe('Payments and finance controls', () => {
     expect(screen.getByText(/does not execute a refund at the payment provider/i)).toBeInTheDocument();
   });
 
-  it('supports maker-checker refund review and records provider-neutral completion evidence', async () => {
+  it('requires explicit independent confirmation before approving and recording refund completion evidence', async () => {
     mockedGetRefund.mockResolvedValue({
       refundRequestId: 'refund-1', paymentId: 'p1', courtId: 'c1', amountMinor: 500,
       currency: 'PGK', reason: 'Duplicate payment', status: 'REQUESTED', requestedBy: 'fin-a'
@@ -145,18 +196,23 @@ describe('Payments and finance controls', () => {
     expect(await screen.findByText('REQUESTED')).toBeInTheDocument();
 
     fireEvent.change(screen.getByLabelText('Refund decision reason'), { target: { value: 'Verified duplicate payment' } });
+    expect(screen.getByRole('button', { name: 'Approve refund' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Reject refund' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('I confirm independent maker-checker review'));
     fireEvent.click(screen.getByRole('button', { name: 'Approve refund' }));
     expect(await screen.findByText('APPROVED')).toBeInTheDocument();
     expect(mockedApproveRefund).toHaveBeenCalledWith('refund-1', 'Verified duplicate payment');
 
     fireEvent.change(screen.getByLabelText('External refund reference'), { target: { value: 'EXT-REF-1' } });
+    expect(screen.getByRole('button', { name: 'Record refund completion evidence' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('I confirm this records external refund evidence only'));
     fireEvent.click(screen.getByRole('button', { name: 'Record refund completion evidence' }));
     expect(await screen.findByText('COMPLETED')).toBeInTheDocument();
     expect(mockedCompleteRefund).toHaveBeenCalledWith('refund-1', 'EXT-REF-1');
     expect(screen.queryByRole('button', { name: /execute provider refund/i })).not.toBeInTheDocument();
   });
 
-  it('can reject a refund request with maker-checker decision evidence', async () => {
+  it('requires explicit independent confirmation before rejecting a refund', async () => {
     mockedGetRefund.mockResolvedValue({
       refundRequestId: 'refund-2', paymentId: 'p2', courtId: 'c1', amountMinor: 300,
       currency: 'PGK', reason: 'Incorrect payment', status: 'REQUESTED', requestedBy: 'fin-a'
@@ -171,6 +227,8 @@ describe('Payments and finance controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Load refund' }));
     await screen.findByText('REQUESTED');
     fireEvent.change(screen.getByLabelText('Refund decision reason'), { target: { value: 'Supporting evidence incomplete' } });
+    expect(screen.getByRole('button', { name: 'Reject refund' })).toBeDisabled();
+    fireEvent.click(screen.getByLabelText('I confirm independent maker-checker review'));
     fireEvent.click(screen.getByRole('button', { name: 'Reject refund' }));
 
     expect(await screen.findByText('REJECTED')).toBeInTheDocument();
