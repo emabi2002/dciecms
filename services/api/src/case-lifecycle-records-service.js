@@ -72,8 +72,11 @@ class CaseLifecycleRecordsService {
     });
   }
 
-  async _emit(actor, eventType, aggregateType, aggregateId, courtId, payload = {}) {
+  async _emit(actor, eventType, aggregateType, aggregateId, courtId, payload = {}, occurrenceKey = null) {
     if (!this.outboxStore) return null;
+    const deduplicationKey = occurrenceKey
+      ? `${aggregateId}:${eventType}:${occurrenceKey}`
+      : `${aggregateId}:${eventType}`;
     return this.outboxStore.enqueue({
       eventType,
       aggregateType,
@@ -81,7 +84,7 @@ class CaseLifecycleRecordsService {
       courtId,
       actorSubject: actor.userId,
       correlationId: actor.correlationId || null,
-      deduplicationKey: `${aggregateId}:${eventType}`,
+      deduplicationKey,
       payload,
       headers: { schemaVersion: 1 }
     });
@@ -152,7 +155,7 @@ class CaseLifecycleRecordsService {
         status: disposed.status,
         dispositionCode,
         judgmentId
-      });
+      }, disposed.disposedAt);
       return disposed;
     } catch (error) {
       return this._mapRepositoryConflict(error, 'Case disposition state conflict');
@@ -183,7 +186,7 @@ class CaseLifecycleRecordsService {
         courtId: courtCase.courtId,
         status: closed.status,
         closureCode
-      });
+      }, closed.closedAt);
       return closed;
     } catch (error) {
       return this._mapRepositoryConflict(error, 'Case closure state conflict');
@@ -210,7 +213,7 @@ class CaseLifecycleRecordsService {
         caseId: courtCase.caseId,
         courtId: courtCase.courtId,
         status: reopened.status
-      });
+      }, reopened.reopenedAt);
       return reopened;
     } catch (error) {
       return this._mapRepositoryConflict(error, 'Case reopening state conflict');
