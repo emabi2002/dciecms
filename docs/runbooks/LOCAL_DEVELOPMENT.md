@@ -119,7 +119,7 @@ When payment integration is enabled, the legacy manual external-provider confirm
 
 Provider failure, cancellation, refund and reversal are represented as durable provider outcome evidence. Refund/reversal does not destructively erase the original payment confirmation, receipt or case history. This repository does **not** implement real settlement reconciliation, provider refund API calls, chargeback handling or payout ingestion.
 
-Migration `db/migrations/0014_payment_integration.sql` and its isolated Supabase test-profile counterpart are repository-delivered artifacts only. They have **not** been applied to a live database by this work.
+Migration `db/migrations/0014_payment_integration_hardening.sql` and its isolated Supabase test-profile counterpart are repository-delivered artifacts only. They have **not** been applied to a live database by this work.
 
 Production gateway onboarding remains a separate gate requiring at minimum: approved provider selection/contract, merchant configuration, callback URL exposure, TLS termination, WAF/rate-limit policy, webhook signature/verification secret provisioning, provider credentials/certificates in approved secret management, controlled execution of migration `0014`, and authorized deployment. None of those actions are performed by the repository implementation.
 
