@@ -25,7 +25,8 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'judicial.hearing_appearances': 'dciecms_test.judicial_hearing_appearances',
   'judicial.proceeding_records': 'dciecms_test.judicial_proceeding_records',
   'judicial.judgments': 'dciecms_test.judicial_judgments',
-  'integration.outbox_events': 'dciecms_test.integration_outbox_events'
+  'integration.outbox_events': 'dciecms_test.integration_outbox_events',
+  'integration.payment_callback_events': 'dciecms_test.payment_callback_events'
 });
 
 function rewriteSql(text, profile = 'logical') {
