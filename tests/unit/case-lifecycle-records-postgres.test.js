@@ -113,3 +113,22 @@ test('disposal approval SQL enforces maker checker, closed-case eligibility and 
   assert.match(sql, /c\.status\s*=\s*'CLOSED'/i);
   assert.doesNotMatch(sql, /DELETE\s+FROM/i);
 });
+
+test('assignRetention uses contiguous SQL placeholders with no unused parameter hole', async () => {
+  const db = new FakeQueryable([{ rows: [{
+    case_record_control_id: 'rc-1', case_id: 'case-1', court_id: 'court-1', status: 'ACTIVE',
+    retention_class_code: 'CIVIL-7Y', retention_trigger_at: '2026-09-07T00:00:00.000Z',
+    disposition_eligible_at: '2033-09-07T00:00:00.000Z', legal_hold: false,
+    created_at: '2026-09-07T00:00:00.000Z', updated_at: '2026-09-07T01:00:00.000Z'
+  }] }]);
+  const repo = new PostgresRepository(db);
+  await repo.assignRetention({
+    caseId: 'case-1', retentionClassCode: 'CIVIL-7Y',
+    retentionTriggerAt: '2026-09-07T00:00:00.000Z', dispositionEligibleAt: '2033-09-07T00:00:00.000Z',
+    actorSubject: 'records-1', at: '2026-09-07T01:00:00.000Z'
+  });
+  const { text, params } = db.calls[0];
+  assert.equal(params.length, 5, 'retention update must not bind an unused actor parameter');
+  assert.match(text, /updated_at=\$5/i);
+  assert.doesNotMatch(text, /\$6\b/);
+});
