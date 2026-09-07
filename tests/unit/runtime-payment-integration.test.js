@@ -63,6 +63,28 @@ test('development runtime composes one deterministic non-production payment boun
   assert.equal(service.paymentProvider.capabilities().developmentOnly, true);
 });
 
+test('development payment repository reloads the durable canonical provider event by record id', async () => {
+  const service = createRuntimeService({
+    env: { DCIECMS_PAYMENT_INTEGRATION_MODE: 'development' },
+    PoolClass: class UnexpectedPool {}
+  });
+  const repository = service.paymentIntegrationRepository;
+  const canonical = await repository.recordPaymentProviderEvent({
+    providerCode: 'development',
+    providerEventId: 'evt-canonical-1',
+    providerPaymentReference: 'dev:payment-1',
+    paymentId: 'payment-1',
+    normalizedEventType: 'PAYMENT_SUCCEEDED',
+    amountMinor: 12500,
+    currency: 'PGK',
+    authenticatedAt: '2026-09-07T01:00:00.000Z',
+    receivedAt: '2026-09-07T01:00:01.000Z'
+  });
+
+  const reloaded = await repository.getPaymentProviderEvent(canonical.eventRecordId);
+  assert.deepEqual(reloaded, canonical);
+});
+
 test('persistent runtime shares repository audit outbox and one PostgreSQL transaction manager across payment services', () => {
   const service = createRuntimeService({
     env: {
