@@ -42,10 +42,21 @@ const expectedMutations = [
   'createReplacementDocument',
   'supersedeDocument',
   'withdrawDocument',
-  'retryDocumentScan'
+  'retryDocumentScan',
+  'disposeCase',
+  'closeCase',
+  'reopenCase',
+  'getCaseRecordControl',
+  'assignRetention',
+  'archiveCaseRecord',
+  'setCaseLegalHold',
+  'releaseCaseLegalHold',
+  'requestCaseRecordDisposal',
+  'approveCaseRecordDisposal',
+  'rejectCaseRecordDisposal'
 ];
 
-test('transactional service registry contains every current HTTP mutation method', () => {
+test('transactional service registry contains every current HTTP mutation or audit-writing method', () => {
   assert.deepEqual([...MUTATING_SERVICE_METHODS].sort(), [...expectedMutations].sort());
 });
 
@@ -105,6 +116,37 @@ test('payment session creation is transaction-wrapped because provider binding a
   const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
   assert.deepEqual(await wrapped.createPaymentSession(),{ok:true});
   assert.deepEqual(calls,['BEGIN','session','COMMIT']);
+});
+
+test('records read and mutations are transaction-wrapped because they persist audit/outbox evidence', async () => {
+  const methods = [
+    'getCaseRecordControl',
+    'disposeCase',
+    'closeCase',
+    'reopenCase',
+    'assignRetention',
+    'archiveCaseRecord',
+    'setCaseLegalHold',
+    'releaseCaseLegalHold',
+    'requestCaseRecordDisposal',
+    'approveCaseRecordDisposal',
+    'rejectCaseRecordDisposal'
+  ];
+
+  for (const method of methods) {
+    const calls = [];
+    const service = { async [method]() { calls.push(method); return { ok: true }; } };
+    const wrapped = createTransactionalService(service, {
+      async withTransaction(work) {
+        calls.push('BEGIN');
+        const value = await work();
+        calls.push('COMMIT');
+        return value;
+      }
+    });
+    assert.deepEqual(await wrapped[method](), { ok: true });
+    assert.deepEqual(calls, ['BEGIN', method, 'COMMIT'], `${method} must use the outer transaction boundary`);
+  }
 });
 
 test('transactional service preserves prototype identity and exposes service properties', () => {
