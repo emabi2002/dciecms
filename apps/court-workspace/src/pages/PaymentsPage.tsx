@@ -2,12 +2,12 @@ import { useState } from 'react';
 import {
   assessFee,
   certifyReconciliation,
-  confirmPayment,
   createPayment,
+  createPaymentSession,
   createReconciliation,
   issueReceipt
 } from '../api/client';
-import type { FeeAssessment, Payment, Receipt, Reconciliation } from '../api/types';
+import type { FeeAssessment, Payment, PaymentSession, Receipt, Reconciliation } from '../api/types';
 import { FinanceStatus } from '../components/FinanceStatus';
 import { MoneyInput, pgkToMinorUnits } from '../components/MoneyInput';
 import { StatusMessage } from '../components/StatusMessage';
@@ -15,9 +15,9 @@ import { StatusMessage } from '../components/StatusMessage';
 export function PaymentsPage() {
   const [filingId, setFilingId] = useState('');
   const [amount, setAmount] = useState('');
-  const [providerReference, setProviderReference] = useState('');
   const [assessment, setAssessment] = useState<FeeAssessment | null>(null);
   const [payment, setPayment] = useState<Payment | null>(null);
+  const [paymentSession, setPaymentSession] = useState<PaymentSession | null>(null);
   const [receipt, setReceipt] = useState<Receipt | null>(null);
   const [reconciliation, setReconciliation] = useState<Reconciliation | null>(null);
   const [error, setError] = useState('');
@@ -48,6 +48,7 @@ export function PaymentsPage() {
     await run(async () => {
       setAssessment(await assessFee(filingId.trim(), minor, 'PGK'));
       setPayment(null);
+      setPaymentSession(null);
       setReceipt(null);
       setReconciliation(null);
     });
@@ -55,16 +56,15 @@ export function PaymentsPage() {
 
   async function makePayment() {
     if (!assessment) return;
-    await run(async () => setPayment(await createPayment(assessment.assessmentId)));
+    await run(async () => {
+      setPaymentSession(null);
+      setPayment(await createPayment(assessment.assessmentId));
+    });
   }
 
-  async function confirm() {
+  async function startPaymentSession() {
     if (!payment) return;
-    if (!providerReference.trim()) {
-      setError('Provider reference is required.');
-      return;
-    }
-    await run(async () => setPayment(await confirmPayment(payment.paymentId, providerReference.trim())));
+    await run(async () => setPaymentSession(await createPaymentSession(payment.paymentId)));
   }
 
   async function makeReceipt() {
@@ -85,7 +85,7 @@ export function PaymentsPage() {
   return (
     <section aria-labelledby="payments-heading">
       <h2 id="payments-heading">Payments</h2>
-      <p>Controlled finance progression. Payment confirmation shown here is an internal DCIECMS state transition, not an external gateway callback.</p>
+      <p>Controlled finance progression. External payment confirmation is established only by verified provider evidence and canonical server state, never by browser-entered provider results.</p>
       {error ? <StatusMessage kind="error" message={error} /> : null}
 
       <div>
@@ -107,9 +107,10 @@ export function PaymentsPage() {
           <FinanceStatus label="Payment" status={payment.status} reference={payment.providerReference || payment.paymentId} />
           {payment.status === 'PENDING' ? (
             <>
-              <label htmlFor="provider-reference">Provider reference</label>
-              <input id="provider-reference" value={providerReference} onChange={(event) => setProviderReference(event.target.value)} disabled={busy} />
-              <button type="button" onClick={() => void confirm()} disabled={busy}>Confirm payment</button>
+              <button type="button" onClick={() => void startPaymentSession()} disabled={busy || Boolean(paymentSession)}>Start secure payment</button>
+              {paymentSession ? (
+                <p><a href={paymentSession.checkoutUrl}>Continue to payment provider</a></p>
+              ) : null}
             </>
           ) : null}
           {payment.status === 'CONFIRMED' ? (
