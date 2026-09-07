@@ -32,7 +32,7 @@ class PersistentDciecmsService extends core.PersistentDciecmsService {
       if (typeof this.repository.getFeeSchedule !== 'function') throw new TypeError('repository must expose getFeeSchedule()');
       const schedule = await this.repository.getFeeSchedule(feeScheduleId);
       if (!schedule) throw new NotFoundError('Fee schedule not found');
-      if (schedule.courtId !== filing.courtId) throw new AccessDeniedError('Fee schedule is outside filing court scope');
+      if (schedule.courtId !== null && schedule.courtId !== filing.courtId) throw new AccessDeniedError('Fee schedule is outside filing court scope');
       if (schedule.status !== 'ACTIVE') throw new ConflictError(`Fee schedule must be ACTIVE, got ${schedule.status}`);
       if (String(schedule.caseTypeCode || '').toUpperCase() !== String(filing.caseTypeCode || '').toUpperCase()) {
         throw new ConflictError('Fee schedule does not apply to the filing case type');
