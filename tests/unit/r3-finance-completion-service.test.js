@@ -69,6 +69,15 @@ test('finance workbench lists court-scoped payment status and refund queues with
   assert.deepEqual(audit.events.slice(-2).map(e=>e.action),['finance.payment.queue.view','finance.refund.queue.view']);
 });
 
+test('finance workbench accepts cancelled refund queue state supported by persistence', async () => {
+  const repo=baseRepo(); let received=null;
+  repo.listRefundRequests=async input=>{ received=input; return [{refundRequestId:'refund-cancelled',courtId:'COURT-A',status:'CANCELLED'}]; };
+  const {service}=makeService(repo);
+  const rows=await service.listRefunds(actor('fin-a','FIN'),{status:'CANCELLED'});
+  assert.equal(rows[0].status,'CANCELLED');
+  assert.deepEqual(received,{courtIds:['COURT-A'],status:'CANCELLED'});
+});
+
 test('finance workbench rejects unknown payment or refund queue states before repository access', async () => {
   const repo=baseRepo(); let calls=0;
   repo.listFinancePayments=async()=>{calls++;return [];}; repo.listRefundRequests=async()=>{calls++;return [];};
