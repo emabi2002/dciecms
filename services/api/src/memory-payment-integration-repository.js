@@ -115,6 +115,17 @@ class MemoryPaymentIntegrationRepository {
     return frozen(row);
   }
 
+  _findEvent(eventRecordId) {
+    for (const event of this.events.values()) {
+      if (event.eventRecordId === eventRecordId) return event;
+    }
+    return null;
+  }
+
+  async getPaymentProviderEvent(eventRecordId) {
+    return frozen(this._findEvent(eventRecordId) || null);
+  }
+
   async confirmPaymentFromProviderEvidence({
     paymentId,
     providerCode,
@@ -178,13 +189,6 @@ class MemoryPaymentIntegrationRepository {
       return frozen(payment);
     }
     throw providerConflict('PAYMENT_PROVIDER_OUTCOME_CONFLICT', 'Payment is not eligible for the provider outcome');
-  }
-
-  _findEvent(eventRecordId) {
-    for (const event of this.events.values()) {
-      if (event.eventRecordId === eventRecordId) return event;
-    }
-    return null;
   }
 
   async markPaymentProviderEventProcessed({ eventRecordId, resultCode, processedAt }) {
