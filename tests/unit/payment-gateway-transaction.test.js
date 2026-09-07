@@ -50,6 +50,14 @@ function build({ auditError = null, outboxError = null } = {}) {
     async markApplied() {
       assertActive('markApplied');
       return { callbackId:CALLBACK_ID, processingStatus:'APPLIED', paymentId:PAYMENT_ID, outcomeCode:'PAYMENT_CONFIRMED' };
+    },
+    async markIgnored() {
+      assertActive('markIgnored');
+      return { callbackId:CALLBACK_ID, processingStatus:'IGNORED', outcomeCode:'GATEWAY_PAYMENT_FAILED' };
+    },
+    async markRejected() {
+      assertActive('markRejected');
+      return { callbackId:CALLBACK_ID, processingStatus:'REJECTED', failureCode:'PAYMENT_EVIDENCE_MISMATCH' };
     }
   };
   const repository = {
