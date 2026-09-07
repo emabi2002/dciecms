@@ -1,21 +1,21 @@
 # DCIECMS Implementation Status
 
-## Baseline and current candidate
+## Repository release boundary
 
-- Baseline branch: `main`
-- Current implementation candidate: `feat/r3-finance-completion`
-- Current candidate migration ceiling: logical `0016_r3_finance_completion.sql`
-- The isolated Supabase test-profile translation is `db/supabase/20260907_dciecms_test_0016.sql`.
-- No migration in this document is represented as applied to a live PNG Magisterial Services database unless separately recorded as production deployment evidence.
+DCIECMS currently contains the executable R0/R1 court-management slice, R2 judicial operations, engineering R3/R4/R5 reliability controls, production-grade provider-neutral authentication/document/payment boundaries, Blueprint R3 Case Lifecycle & Records Governance, and the Blueprint R3 Finance Completion increment.
+
+The current logical migration ceiling is `0016_r3_finance_completion.sql`. The isolated Supabase test-profile translation is `db/supabase/20260907_dciecms_test_0016.sql`.
+
+No migration described here is represented as applied to a live PNG Magisterial Services database unless separately recorded as production deployment evidence.
 
 ## Numbering note
 
-Two release vocabularies exist in the project history and must not be conflated:
+Two release vocabularies exist in project history and must not be conflated:
 
-1. Engineering reliability labels R3/R4/R5 refer to durable idempotency/audit, transactional audit coupling and the durable outbox.
-2. The Steps 1–10 programme blueprint uses functional release numbering. Case Lifecycle & Records Governance and this Finance Completion candidate are part of the blueprint functional R3 programme scope.
+1. Engineering R3/R4/R5 refer to durable idempotency/audit, transactional audit coupling and the durable outbox.
+2. The Steps 1–10 programme blueprint uses functional release numbering. Case Lifecycle & Records Governance and Finance Completion are part of functional Blueprint R3.
 
-## Delivered baseline on `main`
+## Delivered baseline
 
 ### R0/R1 — Registry, initial finance and case opening
 
@@ -42,33 +42,15 @@ Two release vocabularies exist in the project history and must not be conflated:
 - Judicial Workbench UI
 - migrations `0007`–`0010`
 
-### Engineering R3 — Durable controls
+### Engineering R3/R4/R5 — Reliability controls
 
-- migration `0011_durable_controls.sql`
-- durable filing-submission idempotency
-- canonical replay without duplicate business mutation
-- PostgreSQL application audit store
-- awaited audit persistence through Registry, finance, case-opening and judicial operations
-- isolated Supabase `dciecms_test` migration/mapping for `0011`
-
-### Engineering R4 — Transactional audit coupling
-
-- request-scoped `PostgresTransactionManager`
-- `AsyncLocalStorage` transaction context
-- repository and audit writes routed through one physical PostgreSQL client
+- `0011_durable_controls.sql` for durable idempotency and actor-subject audit
+- request-scoped `PostgresTransactionManager` and shared physical PostgreSQL client
 - business mutation rollback when audit persistence fails
-- reviewed mutation registry
-- no schema migration required by engineering R4
-
-### Engineering R5 — Durable domain-event outbox
-
-- migration `0012_event_outbox.sql`
-- durable `integration.outbox_events`
-- idempotent enqueue and bounded worker leasing
-- retry/dead-letter handling
-- minimized domain-event payloads
-- mutation, audit and outbox coupling in one transaction
-- isolated Supabase `dciecms_test` migration/mapping for `0012`
+- `0012_event_outbox.sql` for durable domain events
+- idempotent enqueue, bounded worker leasing, retry and dead-letter handling
+- mutation, audit and outbox commit/rollback coupling
+- isolated Supabase test mappings for engineering migrations
 
 ### Production authentication boundary
 
@@ -76,14 +58,14 @@ Two release vocabularies exist in the project history and must not be conflated:
 - production rejection of development authentication
 - signed JWT/JWKS verification with issuer, audience, expiry, not-before and algorithm controls
 - canonical actor mapping from verified claims only
-- sanitized 401/403/503/500 separation
-- provider-neutral Court Workspace Bearer-token seam
-- no real government IdP registration, client credential or production activation delivered
+- sanitized authentication/authorization failure responses
+- provider-neutral Court Workspace bearer-token seam
+- no live government IdP registration or credential activation
 
 ### Secure document pipeline
 
-- migration `0013_secure_document_pipeline.sql`
-- private server-owned object identity and upload finalization
+- `0013_secure_document_pipeline.sql`
+- private server-owned object identity and quarantine
 - authoritative size/checksum/MIME validation
 - durable malware-scan queue
 - CLEAN-only release
@@ -91,25 +73,23 @@ Two release vocabularies exist in the project history and must not be conflated:
 - immutable replacement/supersede/withdraw history
 - document legal holds and governed-disposition eligibility
 - no normal hard-delete path
-- isolated Supabase `dciecms_test` migration/mapping for `0013`
-- no real production storage/KMS/scanner provider activated
+- no production storage/KMS/scanner provider activated
 
 ### Payment integration hardening
 
-- migration `0014_payment_integration_hardening.sql`
+- `0014_payment_integration_hardening.sql`
 - server-controlled provider binding
-- authenticated raw-body provider callbacks
+- authenticated raw-body callbacks
 - durable verified provider-event inbox
 - duplicate-event idempotency
-- exact canonical payment/provider/amount/currency matching
-- provider-success mutation, audit, outbox and provider-event status in one transaction
+- exact canonical payment/provider/reference/amount/currency matching
+- provider-success mutation, audit, outbox and provider-event state in one transaction
 - manual provider impersonation blocked while gateway mode is enabled
-- isolated Supabase `dciecms_test` migration/mapping for `0014`
 - no production gateway, merchant account, webhook secret or settlement integration activated
 
 ### Blueprint R3 — Case Lifecycle & Records Governance
 
-- migration `0015_case_lifecycle_records.sql`
+- `0015_case_lifecycle_records.sql`
 - controlled `ASSIGNED -> DISPOSED -> CLOSED` lifecycle and governed reopen
 - immutable lifecycle evidence
 - assigned-MAG disposition restrictions and hearing/judgment prerequisites
@@ -117,69 +97,78 @@ Two release vocabularies exist in the project history and must not be conflated:
 - retention, archive and case-level legal-hold controls
 - document and case legal holds as fail-closed disposal vetoes
 - maker/checker disposal-request approval/rejection
-- no physical case/document deletion or disposal executor
 - court-scoped HTTP service and transaction-coupled audit/outbox evidence
-- isolated Supabase `dciecms_test` migration/mapping for `0015`
+- no physical case/document deletion or disposal executor
 
-## Current candidate — Blueprint R3 Finance Completion
+## Blueprint R3 — Finance Completion
 
-The `feat/r3-finance-completion` branch closes the remaining governed finance-control gap identified for the functional R3 release without activating a real payment/refund provider or applying a live database migration.
+Finance Completion closes the governed finance-control gap identified for this increment without activating a live refund/payment provider or applying a live database migration.
 
 ### RBAC and segregation of duties
 
-- `FIN` receives the finance view/request authorities required to operate fee schedules, adjustment requests, refund requests and reconciliation exception review.
-- `FIN-MGR` receives the corresponding governed decision/completion authorities.
+- `FIN` has the assessment, payment/refund view and request authorities required for ordinary finance operations.
+- `FIN-MGR` has governed fee-schedule management, adjustment/refund decision/completion and reconciliation-rejection authorities.
 - security and ICT administration roles receive no implicit finance authority.
-- approval/rejection of payment adjustments and refunds uses maker/checker segregation; a requester cannot approve or reject their own request.
-- direct identifiers remain server-side court scoped before finance state is returned or mutated.
+- adjustment and refund approval/rejection enforce maker/checker segregation: the requester cannot decide the same item.
+- direct identifiers are server-side court scoped before finance state is returned or mutated.
 
 ### Fee schedule governance
 
-- migration `0016_r3_finance_completion.sql` adds `finance.fee_schedules`.
-- schedules carry court scope, case type, fee code, description, PGK-compatible minor-unit amount, effective dates and governed lifecycle state.
-- schedules support create, list, get, activate and retire operations.
-- no fee-schedule delete route is exposed.
+- `0016_r3_finance_completion.sql` adds `finance.fee_schedules`.
+- schedules carry optional national/global or explicit court scope, case type, fee code, description, integer minor-unit amount, currency, effective dates and governed lifecycle state.
+- assessment by schedule uses the persisted ACTIVE schedule amount/currency and records `feeScheduleId` provenance; browser-supplied money cannot override it.
+- global schedules apply to an otherwise in-scope filing when case type/effective dates match.
+- activation prevents overlapping ACTIVE schedules where a national/global schedule would conflict with any court schedule, or where two schedules would conflict within the same court for the same case type/fee/effective period.
+- legacy manual assessment remains only as a controlled compatibility path when no schedule ID is supplied.
+- schedules support create, list, get, activate and retire; no delete route is exposed.
+
+### Finance workbench read models
+
+- `GET /finance/payments` provides a court-scoped payment/collections queue with optional governed status filtering.
+- the payment queue deliberately excludes `provider_reference` from its SQL read model.
+- `GET /finance/refunds` provides the court-scoped refund review queue and supports the persisted refund-state vocabulary, including `CANCELLED`.
+- payment, refund and reconciliation-exception queue reads persist audit evidence and therefore participate in the shared transaction boundary.
 
 ### Payment adjustments
 
 - `finance.payment_adjustments` records waiver, exemption, correction and other governed adjustment requests.
-- original amount, delta and resulting amount are preserved as evidence.
-- adjustment approval is state conditional and maker/checker controlled.
-- an approved adjustment cannot rewrite immutable confirmed-payment evidence.
-- request and decision reasons remain evidentiary/audit content and are not published into generic integration events.
+- original amount, delta and resulting amount remain evidence rather than destructive rewrites.
+- approval/rejection is state conditional and maker/checker controlled.
+- approved adjustments cannot rewrite confirmed-payment monetary evidence.
+- free-text request/decision reasons remain evidentiary/audit content and are excluded from generic outbox payloads.
 
 ### Refund governance
 
-- `finance.refund_requests` records refund request, approval/rejection and completion evidence.
-- refund requests require a confirmed canonical source payment and positive integer minor-unit amount.
-- refund-request SQL locks the canonical payment row and enforces the cumulative refund ceiling across `REQUESTED`, `APPROVED` and `COMPLETED` refund state, preventing concurrent over-refund.
-- refund approval/rejection is maker/checker controlled.
-- completion records an independently obtained external/provider refund reference as evidence only.
-- no HTTP route, repository operation, worker or Court Workspace control executes a refund at a payment provider.
-- the repository therefore remains provider neutral and does not contain a provider refund API integration.
+- `finance.refund_requests` records request, approval/rejection and completion evidence.
+- requests require a confirmed canonical payment and positive integer minor-unit amount.
+- request SQL locks the canonical payment and enforces the cumulative ceiling across `REQUESTED`, `APPROVED` and `COMPLETED` refunds.
+- approval/rejection is maker/checker controlled and state conditional.
+- completion locks the APPROVED refund and CONFIRMED payment, rechecks the cumulative ceiling, then records the independently obtained external refund reference and updates the derived refunded total atomically.
+- a fully refunded payment may transition to `REFUNDED` without rewriting its original confirmed amount.
+- no HTTP route, repository operation, worker or Court Workspace control executes a refund at a provider.
 
-### Reconciliation exceptions and immutable finance evidence
+### Reconciliation and immutable evidence
 
-- reconciliations support reasoned rejection plus normalized exception code/note evidence.
-- court-scoped reconciliation exceptions can be listed for finance review.
-- certified and rejected reconciliation rows are protected by a database `BEFORE UPDATE OR DELETE` trigger.
-- issued receipts are protected by a database `BEFORE UPDATE OR DELETE` trigger; an already-issued receipt cannot be rewritten or deleted in place.
-- delete privileges are revoked from PUBLIC for the new finance-control tables, receipts and reconciliations.
+- reconciliations support reasoned rejection plus normalized exception evidence.
+- court-scoped reconciliation exceptions can be listed for review.
+- certified/rejected reconciliation rows are protected by database `BEFORE UPDATE OR DELETE` immutability controls.
+- issued receipts are protected by database `BEFORE UPDATE OR DELETE` immutability controls.
+- delete privileges are revoked from PUBLIC for new governed finance tables, receipts and reconciliations.
 
-### HTTP API delivered by the candidate
-
-Governed endpoints include:
+### Governed HTTP API
 
 - `POST /finance/fee-schedules`
 - `GET /finance/fee-schedules`
 - `GET /finance/fee-schedules/:feeScheduleId`
 - `POST /finance/fee-schedules/:feeScheduleId/activate`
 - `POST /finance/fee-schedules/:feeScheduleId/retire`
+- `GET /finance/payments`
 - `POST /fee-assessments/:assessmentId/adjustments`
 - `GET /finance/adjustments/:adjustmentId`
 - `POST /finance/adjustments/:adjustmentId/approve`
 - `POST /finance/adjustments/:adjustmentId/reject`
 - `POST /payments/:paymentId/refunds`
+- `GET /finance/refunds`
 - `GET /finance/refunds/:refundRequestId`
 - `POST /finance/refunds/:refundRequestId/approve`
 - `POST /finance/refunds/:refundRequestId/reject`
@@ -187,71 +176,59 @@ Governed endpoints include:
 - `POST /reconciliations/:reconciliationId/reject`
 - `GET /finance/reconciliation-exceptions`
 
-There is no provider-refund execution endpoint and there are no destructive delete endpoints for fee schedules, adjustments or refunds.
-
-### Audit, outbox and transaction guarantees
-
-Finance-completion mutations are registered in the shared outer PostgreSQL transaction boundary.
-
-Regression coverage proves for refund approval that:
-
-- business mutation, application audit evidence and durable outbox enqueue use one physical PostgreSQL client;
-- audit persistence failure rolls back the refund approval and prevents the outbox write;
-- outbox persistence failure rolls back both refund approval and preceding audit work;
-- success commits the finance mutation, audit and outbox together.
-
-Generic finance-completion outbox events contain normalized identifiers/state and exclude free-text request/decision reasons. External provider references are treated as controlled finance evidence and are not used as permission or provider-execution instructions.
-
-### Supabase isolated-test profile
-
-- `db/supabase/20260907_dciecms_test_0016.sql` mirrors logical migration `0016` only inside `dciecms_test`.
-- schema mapping includes:
-  - `finance.fee_schedules` -> `dciecms_test.finance_fee_schedules`
-  - `finance.payment_adjustments` -> `dciecms_test.finance_payment_adjustments`
-  - `finance.refund_requests` -> `dciecms_test.finance_refund_requests`
-- existing finance assessments, payments, receipts and reconciliations continue to map into their isolated `dciecms_test` tables.
-- the isolated migration includes the issued-receipt and finalized-reconciliation immutability triggers.
-- the asset's presence does **not** mean migration `0016` has been applied to a live Supabase/database environment.
+There is no provider-refund execution endpoint and no destructive delete endpoint for fee schedules, adjustments or refunds.
 
 ### Court Workspace finance controls
 
 The `/payments` workspace now covers:
 
-- fee assessment and canonical payment/session progression;
+- configured fee-schedule assessment using schedule identity rather than browser-controlled money;
+- controlled manual assessment compatibility;
+- collections/payment-status queue;
+- canonical payment/session progression;
 - receipt issuance and reconciliation preparation/certification;
 - governed refund request with PGK-to-minor-unit conversion and required reason;
-- refund request lookup;
-- maker/checker refund approve/reject actions with decision reason;
-- recording external refund-completion evidence after approval;
-- court-scoped reconciliation exception display.
+- refund approval queue and direct request lookup;
+- visible maker/checker identities;
+- approve/reject decisions with required reason and explicit independent-review confirmation;
+- completion-evidence recording only after explicit confirmation that an external refund has actually occurred;
+- court-scoped reconciliation-exception display.
 
-The UI explicitly states that refund request/completion controls do not execute a provider refund, and no provider-refund execution button or client function is exposed.
+UI authority is advisory; server RBAC, court scope, state and maker/checker controls remain authoritative.
 
-## Verification controls
+### Audit, outbox and transaction guarantees
 
-Repository CI covers:
+Regression coverage establishes that sensitive finance mutation, application audit and durable outbox persistence share one outer PostgreSQL transaction where applicable. Audit failure rolls back the business transition; outbox failure rolls back both transition and preceding audit work. Generic outbox payloads contain normalized identifiers/state and exclude free-text reasons and external refund references.
 
-- backend unit/API/security/regression tests
-- Court Workspace frontend tests
-- production frontend build
-- PostgreSQL transaction-manager regressions
-- audit and outbox rollback regressions
-- OIDC/JWT authentication regressions
-- secure-document lifecycle/security regressions
-- payment-integration security regressions
-- case lifecycle / records RBAC, scope and non-destructive disposal regressions
-- R3 finance RBAC and maker/checker regressions
-- fee-schedule, adjustment, refund and reconciliation persistence regressions
-- cumulative refund ceiling / row-locking regression
-- issued-receipt and finalized-reconciliation immutability regression
-- refund mutation/audit/outbox transaction rollback regression
-- absence of provider-refund execution and destructive finance HTTP routes
-- isolated Supabase `0016` migration and schema-mapping regressions
-- Court Workspace governed refund and reconciliation-exception regressions
+### Supabase isolated-test profile
+
+- `db/supabase/20260907_dciecms_test_0016.sql` mirrors logical migration `0016` only inside `dciecms_test`.
+- schema mappings include fee schedules, payment adjustments and refund requests plus existing finance structures.
+- the isolated migration mirrors issued-receipt and finalized-reconciliation immutability controls.
+- presence of the asset does **not** mean migration `0016` has been applied to a live Supabase/database environment.
+
+## Verification coverage
+
+Repository CI covers backend unit/API/security/regression tests, Court Workspace tests and production frontend build. Finance-specific regressions include:
+
+- RBAC and court-scope denial
+- maker/checker enforcement
+- authoritative schedule assessment and global-schedule handling
+- prevention of conflicting global/court ACTIVE schedule overlap
+- payment/refund queue status validation and audited reads
+- payment queue provider-reference minimization
+- cumulative refund ceiling and canonical row locking
+- refund completion concurrency/state safety
+- immutable receipt/reconciliation evidence
+- audit/outbox rollback coupling
+- minimized outbox payloads
+- absence of destructive/provider-refund execution routes
+- isolated Supabase `0016` mapping
+- Court Workspace queues and high-risk confirmation controls
 
 ## External / production gates still outstanding
 
-Repository completion is not production activation. The following remain separate gates:
+Repository completion is not production activation. These remain separate explicit gates:
 
 - live database/Supabase migration execution, including `0016`
 - production OIDC/government IdP registration and credentials
@@ -259,11 +236,11 @@ Repository completion is not production activation. The following remain separat
 - production payment gateway, merchant settlement and provider refund API integration
 - email/SMS provider integration
 - permanent outbox/scan/notification worker scheduling
-- approved records retention schedule and any physical disposal executor
+- approved records-retention schedule and any physical disposal executor
 - production hosting, WAF, secret-vault and observability configuration
 - backup/restore and disaster-recovery activation
 - UAT/pilot/go-live authorization
 
-## Functional blueprint work remaining after this candidate
+## Functional blueprint work remaining
 
-After this Finance Completion candidate is merged, functional R3 still requires the separately scoped notifications and enforcement/follow-up capabilities where not already delivered. Blueprint R4 then covers reporting, E-Library and approved external integrations. Final programme gates remain full end-to-end regression, security/performance verification, UAT, migration rehearsal, pilot readiness and production-readiness approval.
+After Finance Completion, functional Blueprint R3 still requires the separately scoped notifications and enforcement/follow-up capabilities where not already delivered. Blueprint R4 then covers reporting, E-Library and approved external integrations. Final programme gates remain full end-to-end regression, security/performance verification, UAT, migration rehearsal, pilot readiness and production-readiness approval.
