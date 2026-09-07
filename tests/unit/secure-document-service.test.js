@@ -181,7 +181,7 @@ test('classification change is privileged, reasoned and audited', async () => {
   repository.documents.set('DOC-A',{documentId:'DOC-A',filingId:'F-1',courtId:'COURT-A',status:'ACTIVE',classification:'CONFIDENTIAL'});
   await assert.rejects(() => service.changeDocumentClassification(actor(),'DOC-A',{classification:'RESTRICTED',reason:'court order'}),/permission denied/i);
   await assert.rejects(() => service.changeDocumentClassification(actor({roles:['REG-MGR']}),'DOC-A',{classification:'RESTRICTED',reason:' '}),/reason/i);
-  const changed=await service.changeDocumentClassification(actor({roles:['REG-MGR']}),'DOC-A',{classification:'RESTRICTED',reason:'court order'});
+  const changed=await service.changeDocumentClassification(actor({roles:['REG-MGR'],grants:['document.restricted.view']}),'DOC-A',{classification:'RESTRICTED',reason:'court order'});
   assert.equal(changed.classification,'RESTRICTED');
   assert.equal(audit.events.at(-1).action,'document.classification.change');
 });
