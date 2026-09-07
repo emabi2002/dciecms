@@ -16,6 +16,7 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'workflow.workflow_tasks': 'dciecms_test.workflow_tasks',
   'finance.fee_assessments': 'dciecms_test.finance_fee_assessments',
   'finance.payments': 'dciecms_test.finance_payments',
+  'finance.payment_provider_events': 'dciecms_test.finance_payment_provider_events',
   'finance.receipts': 'dciecms_test.finance_receipts',
   'finance.reconciliations': 'dciecms_test.finance_reconciliations',
   'case_mgmt.case_number_sequences': 'dciecms_test.case_number_sequences',
