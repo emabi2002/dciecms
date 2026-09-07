@@ -15,7 +15,9 @@ test('successful callback audit and generic outbox evidence exclude provider pay
   const outbox = [];
   const callbackStore = {
     async claim() { return { kind:'NEW', callback:{ callbackId:'cb-1', processingStatus:'PROCESSING' } }; },
-    async markApplied() { return { processingStatus:'APPLIED' }; }
+    async markApplied() { return { processingStatus:'APPLIED' }; },
+    async markIgnored() { throw new Error('unexpected markIgnored'); },
+    async markRejected() { throw new Error('unexpected markRejected'); }
   };
   const repository = {
     async confirmPaymentFromVerifiedGateway() {
