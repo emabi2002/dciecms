@@ -22,6 +22,8 @@ test('isolated Supabase 0015 mirrors case lifecycle and records controls only in
   assert.match(sql, /REVOKE DELETE ON dciecms_test\.case_lifecycle_events FROM PUBLIC/i);
   assert.match(sql, /REVOKE DELETE ON dciecms_test\.case_record_controls FROM PUBLIC/i);
   assert.match(sql, /REVOKE DELETE ON dciecms_test\.records_disposal_requests FROM PUBLIC/i);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION dciecms_test\.enforce_case_lifecycle_event_immutability\(\)/i);
+  assert.match(sql, /BEFORE UPDATE OR DELETE ON dciecms_test\.case_lifecycle_events/i);
 
   assert.doesNotMatch(sql, /CREATE SCHEMA\s+records/i);
   assert.doesNotMatch(sql, /ALTER TABLE\s+case_mgmt\./i);
