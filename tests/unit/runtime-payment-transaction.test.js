@@ -40,7 +40,7 @@ const confirmedPaymentRow = {
   confirmed_at: '2026-09-07T01:05:00.000Z'
 };
 
-const processedEventRow = {
+const receivedEventRow = {
   payment_provider_event_record_id: EVENT_ID,
   provider_code: 'development',
   provider_event_id: 'evt-success-1',
@@ -49,17 +49,25 @@ const processedEventRow = {
   normalized_event_type: 'PAYMENT_SUCCEEDED',
   amount_minor: 12500,
   currency: 'PGK',
-  processing_status: 'PROCESSED',
+  processing_status: 'RECEIVED',
   attempt_count: 0,
   max_attempts: 5,
   next_attempt_at: '2026-09-07T01:00:00.000Z',
   lease_owner: null,
   lease_expires_at: null,
-  result_code: 'PAYMENT_CONFIRMED',
+  result_code: null,
   received_at: '2026-09-07T01:00:01.000Z',
   authenticated_at: '2026-09-07T01:00:00.000Z',
-  processed_at: '2026-09-07T01:05:00.000Z',
+  processed_at: null,
   created_at: '2026-09-07T01:00:01.000Z',
+  updated_at: '2026-09-07T01:00:01.000Z'
+};
+
+const processedEventRow = {
+  ...receivedEventRow,
+  processing_status: 'PROCESSED',
+  result_code: 'PAYMENT_CONFIRMED',
+  processed_at: '2026-09-07T01:05:00.000Z',
   updated_at: '2026-09-07T01:05:00.000Z'
 };
 
@@ -108,6 +116,9 @@ function poolFixture({ failAudit = false, failOutbox = false } = {}) {
         query: async (text, params = []) => {
           this.calls.push({ target: 'client', text, params });
           if (['BEGIN', 'COMMIT', 'ROLLBACK'].includes(text)) return { rows: [] };
+          if (/SELECT[\s\S]+FROM\s+finance\.payment_provider_events[\s\S]+payment_provider_event_record_id\s*=\s*\$1/i.test(text)) {
+            return { rows: [receivedEventRow] };
+          }
           if (/SELECT[\s\S]+FROM\s+finance\.payments/i.test(text)) return { rows: [paymentRow] };
           if (/UPDATE\s+finance\.payments[\s\S]+status='CONFIRMED'/i.test(text)) return { rows: [confirmedPaymentRow] };
           if (/INSERT\s+INTO\s+audit\.audit_events/i.test(text)) {
@@ -158,6 +169,7 @@ test('persistent provider success commits payment audit outbox and inbox state t
   assert.equal(calls.filter(call => call.text === 'BEGIN').length, 1);
   assert.equal(calls.filter(call => call.text === 'COMMIT').length, 1);
   assert.equal(calls.filter(call => call.text === 'ROLLBACK').length, 0);
+  assert.equal(calls.filter(call => /SELECT[\s\S]+FROM\s+finance\.payment_provider_events/i.test(call.text)).length, 1);
   assert.equal(calls.filter(call => /UPDATE\s+finance\.payments/i.test(call.text)).length, 1);
   assert.equal(calls.filter(call => /INSERT\s+INTO\s+audit\.audit_events/i.test(call.text)).length, 1);
   assert.equal(calls.filter(call => /INSERT\s+INTO\s+integration\.outbox_events/i.test(call.text)).length, 1);
