@@ -125,6 +125,27 @@ test('malformed or cross-provider session response fails closed without binding'
   }
 });
 
+test('provider checkout URL must use HTTPS before a payment can be bound', async () => {
+  for (const checkoutUrl of [
+    'http://checkout.example.invalid/session/abc',
+    'javascript:alert(1)',
+    '/relative/checkout'
+  ]) {
+    const { service, repo } = fixture({
+      session: {
+        providerCode: 'approved-gateway',
+        providerPaymentReference: 'gw-pay-1',
+        checkoutUrl
+      }
+    });
+    await assert.rejects(
+      () => service.createPaymentSession(actor(), PAYMENT.paymentId, {}),
+      /checkout|https/i
+    );
+    assert.equal(repo.bindCalls.length, 0);
+  }
+});
+
 test('checkout material is ephemeral and never written to audit or provider binding input', async () => {
   const { service, repo, auditEvents } = fixture();
   const result = await service.createPaymentSession(actor(), PAYMENT.paymentId, {});

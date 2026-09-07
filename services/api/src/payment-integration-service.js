@@ -49,6 +49,20 @@ function requireProviderText(value, label) {
   return normalized;
 }
 
+function requireHttpsCheckoutUrl(value) {
+  const checkoutUrl = requireProviderText(value, 'checkout URL');
+  let parsed;
+  try {
+    parsed = new URL(checkoutUrl);
+  } catch {
+    throw new PaymentIntegrationValidationError('Provider session checkout URL must be an absolute HTTPS URL');
+  }
+  if (parsed.protocol !== 'https:') {
+    throw new PaymentIntegrationValidationError('Provider session checkout URL must use HTTPS');
+  }
+  return checkoutUrl;
+}
+
 function rejectCallerOverrides(input = {}) {
   const forbidden = [
     'amountMinor',
@@ -112,7 +126,7 @@ class PaymentIntegrationService {
       throw new PaymentIntegrationValidationError('Provider session provider code does not match configured provider');
     }
     const providerPaymentReference = requireProviderText(session.providerPaymentReference, 'reference');
-    const checkoutUrl = requireProviderText(session.checkoutUrl, 'checkout URL');
+    const checkoutUrl = requireHttpsCheckoutUrl(session.checkoutUrl);
     const expiresAt = session.expiresAt == null ? null : String(session.expiresAt).trim();
     if (expiresAt && Number.isNaN(Date.parse(expiresAt))) {
       throw new PaymentIntegrationValidationError('Provider session expiry is invalid');
