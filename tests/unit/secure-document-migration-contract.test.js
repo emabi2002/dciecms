@@ -35,6 +35,19 @@ test('0013 extends document lifecycle with private immutable storage evidence', 
   assert.match(sql, /COMMIT;/i);
 });
 
+test('0013 prevents finalized storage identity and integrity evidence from being rewritten', () => {
+  const sql = read('db/migrations/0013_secure_document_pipeline.sql');
+
+  assert.match(sql, /CREATE\s+OR\s+REPLACE\s+FUNCTION\s+documents\.enforce_document_byte_immutability/i);
+  assert.match(sql, /OLD\.finalized_at\s+IS\s+NOT\s+NULL/i);
+  assert.match(sql, /NEW\.storage_object_key\s+IS\s+DISTINCT\s+FROM\s+OLD\.storage_object_key/i);
+  assert.match(sql, /NEW\.checksum_sha256\s+IS\s+DISTINCT\s+FROM\s+OLD\.checksum_sha256/i);
+  assert.match(sql, /NEW\.size_bytes\s+IS\s+DISTINCT\s+FROM\s+OLD\.size_bytes/i);
+  assert.match(sql, /NEW\.detected_mime_type\s+IS\s+DISTINCT\s+FROM\s+OLD\.detected_mime_type/i);
+  assert.match(sql, /CREATE\s+TRIGGER\s+documents_bytes_immutable_trg/i);
+  assert.match(sql, /BEFORE\s+UPDATE\s+ON\s+documents\.documents/i);
+});
+
 test('0013 creates a dedicated leased malware scan queue with bounded retry state', () => {
   const sql = read('db/migrations/0013_secure_document_pipeline.sql');
 
