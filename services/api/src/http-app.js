@@ -10,12 +10,43 @@ const {
   SecureDocumentNotFoundError,
   SecureDocumentConflictError
 } = require('./secure-document-service');
+const {
+  PaymentIntegrationNotFoundError,
+  PaymentIntegrationValidationError,
+  PaymentIntegrationConflictError
+} = require('./payment-integration-service');
+const {
+  PaymentWebhookValidationError,
+  PaymentWebhookVerificationError,
+  PaymentWebhookBodyTooLargeError
+} = require('./payment-webhook-service');
 
 async function readJson(req) {
   let body = '';
   for await (const chunk of req) body += chunk;
   if (!body) return {};
   try { return JSON.parse(body); } catch { throw new ValidationError('Invalid JSON body'); }
+}
+
+async function readRawBody(req, maxBytes) {
+  if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
+    throw new TypeError('Webhook body limit must be a positive integer');
+  }
+
+  const declaredLength = Number(req.headers['content-length']);
+  if (Number.isFinite(declaredLength) && declaredLength > maxBytes) {
+    throw new PaymentWebhookBodyTooLargeError();
+  }
+
+  const chunks = [];
+  let size = 0;
+  for await (const chunk of req) {
+    const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    size += bytes.length;
+    if (size > maxBytes) throw new PaymentWebhookBodyTooLargeError();
+    chunks.push(bytes);
+  }
+  return Buffer.concat(chunks, size);
 }
 
 function send(res, status, payload, headers = {}) {
@@ -29,6 +60,24 @@ function send(res, status, payload, headers = {}) {
 }
 
 function mapError(error, res) {
+  if (error instanceof PaymentWebhookVerificationError) {
+    return send(res, 401, { error: 'provider_authentication_failed' });
+  }
+  if (error instanceof PaymentWebhookBodyTooLargeError) {
+    return send(res, 413, { error: 'payload_too_large' });
+  }
+  if (error instanceof PaymentWebhookValidationError) {
+    return send(res, 422, { error: 'invalid_provider_event' });
+  }
+  if (error instanceof PaymentIntegrationNotFoundError) {
+    return send(res, 404, { error: 'not_found' });
+  }
+  if (error instanceof PaymentIntegrationConflictError) {
+    return send(res, 409, { error: 'payment_integration_conflict' });
+  }
+  if (error instanceof PaymentIntegrationValidationError) {
+    return send(res, 422, { error: 'payment_integration_validation_error' });
+  }
   if (error instanceof AuthenticationError) {
     return send(res, 401, { error: 'unauthorized' }, { 'www-authenticate': 'Bearer' });
   }
@@ -48,10 +97,21 @@ function mapError(error, res) {
 function createHttpApp(service, actorResolver) {
   return async function handler(req, res) {
     try {
-      const actor = await actorResolver(req);
-      if (!actor) return send(res, 401, { error: 'unauthorized' });
       const url = new URL(req.url, 'http://local');
       const path = url.pathname;
+
+      if (req.method === 'POST' && path === '/payment-provider/webhook') {
+        const webhookService = service.paymentWebhookService;
+        if (!webhookService || service.paymentIntegrationMode === 'disabled') {
+          return send(res, 404, { error: 'not_found' });
+        }
+        const rawBody = await readRawBody(req, webhookService.maxBodyBytes);
+        await webhookService.ingest({ rawBody, headers: req.headers });
+        return send(res, 202, { accepted: true }, { 'cache-control': 'no-store' });
+      }
+
+      const actor = await actorResolver(req);
+      if (!actor) return send(res, 401, { error: 'unauthorized' });
 
       if (req.method === 'POST' && path === '/parties') return send(res, 201, await service.createParty(actor, await readJson(req)));
       if (req.method === 'POST' && path === '/filings') return send(res, 201, await service.createFilingDraft(actor, await readJson(req)));
@@ -122,8 +182,18 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && assessmentPost) return send(res, 201, await service.assessFilingFee(actor, assessmentPost[1], await readJson(req)));
       const paymentPost = path.match(/^\/fee-assessments\/([^/]+)\/payments$/);
       if (req.method === 'POST' && paymentPost) { await readJson(req); return send(res, 201, await service.createPayment(actor, paymentPost[1])); }
+      const paymentSessionPost = path.match(/^\/payments\/([^/]+)\/sessions$/);
+      if (req.method === 'POST' && paymentSessionPost) {
+        return send(res, 201, await service.createPaymentSession(actor, paymentSessionPost[1], await readJson(req)), { 'cache-control': 'no-store' });
+      }
       const confirmPost = path.match(/^\/payments\/([^/]+)\/confirm$/);
-      if (req.method === 'POST' && confirmPost) { const body = await readJson(req); return send(res, 200, await service.confirmPayment(actor, confirmPost[1], body.providerReference)); }
+      if (req.method === 'POST' && confirmPost) {
+        if (service.paymentIntegrationMode === 'enabled') {
+          return send(res, 409, { error: 'provider_confirmation_required' });
+        }
+        const body = await readJson(req);
+        return send(res, 200, await service.confirmPayment(actor, confirmPost[1], body.providerReference));
+      }
       const receiptPost = path.match(/^\/payments\/([^/]+)\/receipt$/);
       if (req.method === 'POST' && receiptPost) { await readJson(req); return send(res, 201, await service.issueReceipt(actor, receiptPost[1])); }
       const reconciliationPost = path.match(/^\/payments\/([^/]+)\/reconciliations$/);
