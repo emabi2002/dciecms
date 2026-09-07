@@ -220,6 +220,30 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && openCasePost) { const body = await readJson(req); return send(res, 201, await service.openCase(actor, openCasePost[1], body.paymentId)); }
       const assignCasePost = path.match(/^\/cases\/([^/]+)\/assign$/);
       if (req.method === 'POST' && assignCasePost) return send(res, 200, await service.assignCase(actor, assignCasePost[1], await readJson(req)));
+
+      const disposeCasePost = path.match(/^\/cases\/([^/]+)\/disposition$/);
+      if (req.method === 'POST' && disposeCasePost) return send(res, 200, await service.disposeCase(actor, disposeCasePost[1], await readJson(req)));
+      const closeCasePost = path.match(/^\/cases\/([^/]+)\/close$/);
+      if (req.method === 'POST' && closeCasePost) return send(res, 200, await service.closeCase(actor, closeCasePost[1], await readJson(req)));
+      const reopenCasePost = path.match(/^\/cases\/([^/]+)\/reopen$/);
+      if (req.method === 'POST' && reopenCasePost) return send(res, 200, await service.reopenCase(actor, reopenCasePost[1], await readJson(req)));
+      const recordsControlGet = path.match(/^\/cases\/([^/]+)\/records-control$/);
+      if (req.method === 'GET' && recordsControlGet) return send(res, 200, await service.getCaseRecordControl(actor, recordsControlGet[1]));
+      const retentionPost = path.match(/^\/cases\/([^/]+)\/records-control\/retention$/);
+      if (req.method === 'POST' && retentionPost) return send(res, 200, await service.assignRetention(actor, retentionPost[1], await readJson(req)));
+      const archivePost = path.match(/^\/cases\/([^/]+)\/records-control\/archive$/);
+      if (req.method === 'POST' && archivePost) { await readJson(req); return send(res, 200, await service.archiveCaseRecord(actor, archivePost[1])); }
+      const legalHoldPost = path.match(/^\/cases\/([^/]+)\/records-control\/legal-hold$/);
+      if (req.method === 'POST' && legalHoldPost) return send(res, 200, await service.setCaseLegalHold(actor, legalHoldPost[1], await readJson(req)));
+      const releaseLegalHoldPost = path.match(/^\/cases\/([^/]+)\/records-control\/legal-hold\/release$/);
+      if (req.method === 'POST' && releaseLegalHoldPost) return send(res, 200, await service.releaseCaseLegalHold(actor, releaseLegalHoldPost[1], await readJson(req)));
+      const disposalRequestPost = path.match(/^\/cases\/([^/]+)\/records-control\/disposal-requests$/);
+      if (req.method === 'POST' && disposalRequestPost) return send(res, 201, await service.requestCaseRecordDisposal(actor, disposalRequestPost[1], await readJson(req)));
+      const approveDisposalPost = path.match(/^\/records\/disposal-requests\/([^/]+)\/approve$/);
+      if (req.method === 'POST' && approveDisposalPost) return send(res, 200, await service.approveCaseRecordDisposal(actor, approveDisposalPost[1], await readJson(req)));
+      const rejectDisposalPost = path.match(/^\/records\/disposal-requests\/([^/]+)\/reject$/);
+      if (req.method === 'POST' && rejectDisposalPost) return send(res, 200, await service.rejectCaseRecordDisposal(actor, rejectDisposalPost[1], await readJson(req)));
+
       const createHearingPost = path.match(/^\/cases\/([^/]+)\/hearings$/);
       if (req.method === 'POST' && createHearingPost) return send(res, 201, await service.scheduleHearing(actor, createHearingPost[1], await readJson(req)));
       const createJudgmentPost = path.match(/^\/cases\/([^/]+)\/judgments$/);
