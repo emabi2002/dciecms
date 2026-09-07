@@ -43,7 +43,7 @@ function poolFixture({ failAudit = false, failOutbox = false } = {}) {
           this.calls.push({ target: 'client', text, params });
           if (text === 'BEGIN' || text === 'COMMIT' || text === 'ROLLBACK') return { rows: [] };
 
-          if (/SELECT[\s\S]+FROM finance\.refund_requests WHERE refund_request_id=\$1/i.test(text)) {
+          if (/^\s*SELECT[\s\S]+FROM finance\.refund_requests WHERE refund_request_id=\$1/i.test(text)) {
             return { rows: [refundRow('REQUESTED')] };
           }
 
