@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS dciecms_test.case_lifecycle_events (
 CREATE INDEX IF NOT EXISTS case_lifecycle_events_case_idx
   ON dciecms_test.case_lifecycle_events(case_id, occurred_at, lifecycle_event_id);
 
+CREATE OR REPLACE FUNCTION dciecms_test.enforce_case_lifecycle_event_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Case lifecycle events are immutable';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS case_lifecycle_events_immutability_trg ON dciecms_test.case_lifecycle_events;
+CREATE TRIGGER case_lifecycle_events_immutability_trg
+BEFORE UPDATE OR DELETE ON dciecms_test.case_lifecycle_events
+FOR EACH ROW EXECUTE FUNCTION dciecms_test.enforce_case_lifecycle_event_immutability();
+
 CREATE TABLE IF NOT EXISTS dciecms_test.case_record_controls (
   case_record_control_id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   case_id uuid NOT NULL UNIQUE REFERENCES dciecms_test.cases(case_id),
