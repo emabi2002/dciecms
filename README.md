@@ -104,7 +104,7 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - repository code does **not** select or activate a real storage provider, bucket, KMS key, malware-scanner provider, provider credential, permanent scan-worker schedule or production deployment
 
 ### Payment integration hardening capabilities
-- migration `0014_payment_integration.sql` adds server-controlled payment-provider binding and a durable provider-event inbox without storing raw webhook bodies, signature secrets or checkout tokens
+- migration `0014_payment_integration_hardening.sql` adds server-controlled payment-provider binding and a durable provider-event inbox without storing raw webhook bodies, signature secrets or checkout tokens
 - `DCIECMS_PAYMENT_INTEGRATION_MODE` is fail closed: omitted mode resolves to `disabled`, production rejects the deterministic development adapter, and `enabled` requires an explicitly injected production-capable provider
 - provider-neutral payment-session creation uses canonical server payment identity, amount and currency; callers cannot override amount, currency, provider identity or provider payment reference
 - repeated session creation uses a stable server idempotency key and binds only one canonical provider reference to the pending payment
