@@ -122,7 +122,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - no real production storage provider, bucket, KMS configuration, malware-scanner provider, provider credential, permanent worker schedule, live migration or production activation has been performed
 
 ### Payment integration hardening
-- migration `0014_payment_integration.sql` adds server-controlled provider binding fields to canonical payments and a durable provider-event inbox with normalized event identity, correlation, outcome and processing state
+- migration `0014_payment_integration_hardening.sql` adds server-controlled provider binding fields to canonical payments and a durable provider-event inbox with normalized event identity, correlation, outcome and processing state
 - isolated Supabase test-profile migration `db/supabase/20260907_dciecms_test_0014.sql` mirrors the payment integration schema changes without implying live execution
 - provider-neutral payment-provider contract requires session creation, webhook verification and capability attestation
 - `DCIECMS_PAYMENT_INTEGRATION_MODE` defaults to `disabled`; production rejects `development`; `enabled` requires an approved injected production-capable provider
@@ -134,6 +134,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - raw callback bytes and headers are used for verification before payload trust; only normalized verified event evidence enters durable storage
 - raw webhook signatures, provider authorization headers, checkout tokens and provider diagnostic text are excluded from payment rows, audit and outbox evidence
 - provider events are idempotent by provider code plus provider event ID
+- provider-event business processing accepts only the canonical event record ID as its processing handle, reloads the durable verified inbox record inside the active transaction, and makes payment decisions only from that reloaded evidence
 - success confirmation requires exact canonical match for payment ID/correlation, provider code, provider reference, amount and currency
 - mismatched provider, reference, amount, currency or payment correlation rejects the event and leaves the payment unconfirmed
 - failed/cancelled provider outcomes do not confirm; refund/reversal outcomes preserve original confirmation and historical downstream receipt/case evidence rather than destructively rewriting history
@@ -177,7 +178,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - payment-provider contract/configuration regressions for production/development separation, default-disabled behavior and approved-provider attestation
 - payment-session regressions for canonical server amount/currency/payment identity, caller override rejection, court/RBAC scope, pending-only eligibility, stable idempotency and ephemeral checkout material
 - payment-webhook regressions for bounded raw-body verification before payload trust, invalid/stale proof rejection, normalized evidence only, duplicate provider-event idempotency and malformed/cross-provider fail-closed behavior
-- payment-confirmation integrity regressions for exact amount/currency/provider/reference/correlation matching, success-only confirmation and no receipt/case side effects from callback processing
+- payment-confirmation integrity regressions for exact amount/currency/provider/reference/correlation matching, durable canonical-event reload, forged event-envelope rejection, success-only confirmation and no receipt/case side effects from callback processing
 - persistent payment runtime regressions proving one shared repository/audit/outbox/transaction boundary and rollback on audit or outbox failure
 - payment HTTP security regressions proving browser/OIDC auth isolation from callbacks, manual provider-confirm blocking in enabled mode, sanitized provider failures, bounded session/callback payloads and minimal checkout response data
 - Court Workspace regressions proving session-only gateway flow and removal of the legacy browser provider-reference confirmation seam
