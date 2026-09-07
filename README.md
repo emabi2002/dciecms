@@ -4,7 +4,7 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, a provider-neutral production OIDC/JWT authentication boundary, and a provider-neutral secure document pipeline. No real government IdP, production storage/scanner provider, production credential, live database migration or production deployment is implied by this repository state.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, a provider-neutral production OIDC/JWT authentication boundary, a provider-neutral secure document pipeline, and a provider-neutral hardened payment-integration boundary. No real government IdP, production storage/scanner provider, production payment gateway, production credential, live database migration or production deployment is implied by this repository state.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
@@ -103,13 +103,33 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - production defaults the document pipeline to disabled; production cannot select development adapters; enabled production mode requires approved injected private/encrypted storage and malware-scanner adapters
 - repository code does **not** select or activate a real storage provider, bucket, KMS key, malware-scanner provider, provider credential, permanent scan-worker schedule or production deployment
 
+### Payment integration hardening capabilities
+- migration `0014_payment_integration.sql` adds server-controlled payment-provider binding and a durable provider-event inbox without storing raw webhook bodies, signature secrets or checkout tokens
+- `DCIECMS_PAYMENT_INTEGRATION_MODE` is fail closed: omitted mode resolves to `disabled`, production rejects the deterministic development adapter, and `enabled` requires an explicitly injected production-capable provider
+- provider-neutral payment-session creation uses canonical server payment identity, amount and currency; callers cannot override amount, currency, provider identity or provider payment reference
+- repeated session creation uses a stable server idempotency key and binds only one canonical provider reference to the pending payment
+- the browser receives only ephemeral `checkoutUrl` and `expiresAt` session metadata and no provider binding/reference details
+- payment-session request bodies are bounded before service invocation and session responses are `Cache-Control: no-store`
+- provider callbacks use a dedicated raw-body boundary, are size bounded before verification, and are authenticated by the payment-provider verifier rather than by browser/OIDC actor authentication
+- only normalized verified callback evidence enters the durable provider-event inbox; raw callback bytes, webhook signatures, provider authorization headers and provider secrets are not persisted
+- duplicate provider events are idempotent by provider code plus provider event ID
+- a provider `PAYMENT_SUCCEEDED` event confirms only when canonical payment ID, provider code, provider reference, amount and currency all match the server-bound payment
+- failed, cancelled, refunded and reversed outcomes are modeled as non-destructive provider evidence; refund/reversal does not erase original confirmation, receipt or case history
+- provider callback processing cannot issue a receipt or open a case directly; downstream receipt/case-opening controls continue to depend on canonical `CONFIRMED` payment state and their existing authorization checks
+- provider-success mutation, application audit, `payment.confirmed` outbox event and provider-event processing state share the existing outer PostgreSQL transaction and roll back together on audit/outbox failure
+- when payment integration is `enabled`, the legacy manual external-provider confirmation route is blocked so FIN/FIN-MGR users cannot impersonate a provider callback
+- Court Workspace requests a provider-neutral checkout session and does not export the former browser `confirmPayment(paymentId, providerReference)` path for ordinary gateway flow
+- provider/internal HTTP failures are sanitized and cannot echo provider secrets or verification details
+- repository code does **not** select or activate a real payment gateway, merchant account, callback URL, TLS/WAF rule, webhook secret, settlement feed, refund API or production credential
+
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
 - live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
-- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`), R5 (`db/supabase/20260906_dciecms_test_0012.sql`) and the secure document pipeline (`db/supabase/20260907_dciecms_test_0013.sql`); their presence does not mean they have been executed against any live environment
+- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`), R5 (`db/supabase/20260906_dciecms_test_0012.sql`), secure documents (`db/supabase/20260907_dciecms_test_0013.sql`) and payment integration (`db/supabase/20260907_dciecms_test_0014.sql`); their presence does not mean they have been executed against any live environment
 - production-authentication regressions cover invalid signature, issuer, audience, time validity, subject/claim shape, signing algorithm, unknown keys, JWKS failure isolation, startup fail-closed behavior, token non-propagation, sanitized 401/503/500 behavior and 401/403 separation
 - secure-document regressions cover caller-controlled object-key rejection, authoritative integrity validation, CLEAN-only release, cross-court and cross-filer isolation, RESTRICTED/SEALED grant enforcement, signed-grant non-persistence, scan failure isolation, immutable versioning, no hard-delete path, legal-hold veto and provider/scanner diagnostic sanitization
-- production deployment is not implied by the presence of deployment, migration, authentication, document-storage, scanner, outbox or smoke-test tooling
+- payment-integration regressions cover raw-body callback verification, callback/session body bounds, callback authentication isolation, duplicate events, exact canonical matching, cross-provider rejection, fail-closed outages, secret non-persistence, sanitized HTTP failures, manual-provider-confirm blocking and transactional rollback
+- production deployment is not implied by the presence of deployment, migration, authentication, document-storage, scanner, payment-provider, outbox or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -144,13 +164,15 @@ npm install
 npm test
 ```
 
-Start the local API with the authentication and secure-document development modes explicitly selected:
+Start the local API with the authentication, secure-document and deterministic payment development modes explicitly selected:
 
 ```bash
-DCIECMS_AUTH_MODE=development DCIECMS_DOCUMENT_PIPELINE_MODE=development PORT=3000 npm start
+DCIECMS_AUTH_MODE=development DCIECMS_DOCUMENT_PIPELINE_MODE=development DCIECMS_PAYMENT_INTEGRATION_MODE=development PORT=3000 npm start
 ```
 
 The Court Workspace uses `VITE_DCIECMS_API_BASE_URL` when an API base URL is required. Development identity headers are emitted only when `VITE_DCIECMS_DEV_IDENTITY=true`; that mechanism remains development scaffolding and is not production authentication. Production bearer tokens are supplied at runtime through the API client's access-token-provider seam, not through a `VITE_*` token value.
+
+For local payment-flow testing, `DCIECMS_PAYMENT_INTEGRATION_MODE=development` selects only the deterministic non-production adapter. It must not be used to represent a real gateway, settlement, refund or production callback integration.
 
 ## Important security boundary
 
@@ -158,6 +180,8 @@ The `x-dev-*` request headers are development-only scaffolding. They are **not p
 
 The secure document development adapters are also development/test scaffolding. Production defaults the pipeline to disabled and must fail closed unless explicitly enabled with approved private encrypted storage and malware-scanner adapters. Signed upload/download grants, storage/scanner credentials and raw provider diagnostics must not be persisted in document metadata, audit/outbox evidence, source control or HTTP errors.
 
-The browser is not an authorization boundary. Court scope, record relationship, document confidentiality, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, case-number generation and case-opening eligibility remain enforced by API/database layers.
+The payment development adapter is likewise development/test scaffolding. Production payment integration defaults to disabled and cannot silently use the development adapter. Real gateway onboarding requires an approved provider contract, merchant configuration, callback URL, TLS/WAF exposure, webhook-signature secret provisioning and production secret-management/deployment authorization. Provider callback bytes, signatures, credentials, checkout tokens and provider internals must not be persisted to audit/outbox records or exposed in browser-facing errors.
 
-Real government IdP registration/browser login, production object-storage/KMS selection and provisioning, production malware-scanner integration, external payment-gateway callbacks, email/SMS providers, government-agency integrations, permanent outbox/scan-worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, live migration execution, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
+The browser is not an authorization boundary. Court scope, record relationship, document confidentiality, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, payment confirmation integrity, case-number generation and case-opening eligibility remain enforced by API/database layers.
+
+Real government IdP registration/browser login, production object-storage/KMS selection and provisioning, production malware-scanner integration, production payment-gateway onboarding, external settlement/refund integration, email/SMS providers, government-agency integrations, permanent outbox/scan-worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, live migration execution, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
