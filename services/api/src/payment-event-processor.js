@@ -62,6 +62,7 @@ function optionalEvidenceMatches(payment, event) {
 
 class PaymentEventProcessor {
   constructor({ repository, auditStore, outboxStore, transactionManager, clock = () => new Date() } = {}) {
+    requireMethod(repository, 'getPaymentProviderEvent', 'repository');
     requireMethod(repository, 'getPaymentProviderBinding', 'repository');
     requireMethod(repository, 'confirmPaymentFromProviderEvidence', 'repository');
     requireMethod(repository, 'transitionPaymentProviderOutcome', 'repository');
@@ -84,12 +85,23 @@ class PaymentEventProcessor {
     return date.toISOString();
   }
 
-  _validateEventEnvelope(event) {
-    if (!event || typeof event !== 'object' || Array.isArray(event)) {
-      throw new TypeError('Canonical payment provider event is required');
+  _validateEventEnvelope(input) {
+    if (!input || typeof input !== 'object' || Array.isArray(input)) {
+      throw new TypeError('Payment provider event processing handle is required');
     }
-    if (!normalizedText(event.eventRecordId)) {
+    const eventRecordId = normalizedText(input.eventRecordId);
+    if (!eventRecordId) {
       throw new TypeError('Canonical payment provider event record id is required');
+    }
+    return eventRecordId;
+  }
+
+  _validateCanonicalEvent(event, eventRecordId) {
+    if (!event || typeof event !== 'object' || Array.isArray(event)) {
+      throw new TypeError('Canonical payment provider event is unavailable');
+    }
+    if (normalizedText(event.eventRecordId) !== eventRecordId) {
+      throw new TypeError('Canonical payment provider event identity mismatch');
     }
     return event;
   }
@@ -232,13 +244,18 @@ class PaymentEventProcessor {
   }
 
   async process(input) {
-    const event = this._validateEventEnvelope(input);
-    const existingState = normalizedCode(event.processingStatus);
-    if (TERMINAL_EVENT_STATES.has(existingState)) {
-      return Object.freeze({ payment: null, event, duplicate: true });
-    }
+    const eventRecordId = this._validateEventEnvelope(input);
 
     return this.transactionManager.withTransaction(async () => {
+      const event = this._validateCanonicalEvent(
+        await this.repository.getPaymentProviderEvent(eventRecordId),
+        eventRecordId
+      );
+      const existingState = normalizedCode(event.processingStatus);
+      if (TERMINAL_EVENT_STATES.has(existingState)) {
+        return Object.freeze({ payment: null, event, duplicate: true });
+      }
+
       const now = this._nowIso();
       const type = normalizedCode(event.normalizedEventType);
       if (!KNOWN_EVENT_TYPES.has(type)) {
