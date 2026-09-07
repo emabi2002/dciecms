@@ -250,13 +250,20 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
   };
 
   proto.createDisposalRequest = async function createDisposalRequest({ disposalRequestId, caseId, reason, actorSubject, at }) {
-    const result = await this.db.query(`WITH eligible AS (
+    const result = await this.db.query(`WITH document_guard AS (
+      SELECT d.document_id,d.legal_hold
+      FROM documents.documents d
+      JOIN case_mgmt.cases cg ON cg.filing_id=d.filing_id
+      WHERE cg.case_id=$1
+      FOR UPDATE OF d
+    ), eligible AS (
       SELECT rc.case_record_control_id,rc.case_id,rc.court_id
       FROM records.case_record_controls rc
       JOIN case_mgmt.cases c ON c.case_id=rc.case_id
       WHERE rc.case_id=$1 AND c.status='CLOSED' AND rc.status='ARCHIVED'
         AND rc.legal_hold=false AND rc.disposition_eligible_at IS NOT NULL
         AND rc.disposition_eligible_at <= $5
+        AND NOT EXISTS (SELECT 1 FROM document_guard dg WHERE dg.legal_hold=true)
       FOR UPDATE OF rc
     ), requested AS (
       INSERT INTO records.disposal_requests
@@ -282,7 +289,18 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
   };
 
   proto.approveDisposalRequest = async function approveDisposalRequest({ disposalRequestId, actorSubject, decisionReason, at }) {
-    const result = await this.db.query(`WITH approved AS (
+    const result = await this.db.query(`WITH request_case AS (
+      SELECT dr.case_id
+      FROM records.disposal_requests dr
+      WHERE dr.disposal_request_id=$1
+      FOR UPDATE OF dr
+    ), document_guard AS (
+      SELECT d.document_id,d.legal_hold
+      FROM documents.documents d
+      JOIN case_mgmt.cases cg ON cg.filing_id=d.filing_id
+      JOIN request_case rq ON rq.case_id=cg.case_id
+      FOR UPDATE OF d
+    ), approved AS (
       UPDATE records.disposal_requests dr
       SET status='APPROVED',decided_by_subject=$2,decided_at=$4,decision_reason=$3
       FROM records.case_record_controls rc
@@ -296,6 +314,7 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
         AND rc.disposition_eligible_at IS NOT NULL
         AND rc.disposition_eligible_at <= $4
         AND c.status='CLOSED'
+        AND NOT EXISTS (SELECT 1 FROM document_guard dg WHERE dg.legal_hold=true)
       RETURNING dr.${DISPOSAL_COLUMNS.replaceAll(',', ',dr.')}
     ), control AS (
       UPDATE records.case_record_controls rc
