@@ -182,6 +182,14 @@ export function assessFee(filingId: string, amountMinor: number, currency = 'PGK
   return apiRequest<FeeAssessment>({ method: 'POST', path: `/filings/${id(filingId)}/fee-assessments`, body: { amountMinor, currency } }, config);
 }
 
+export function assessFeeBySchedule(filingId: string, feeScheduleId: string, config?: ApiClientConfig) {
+  return apiRequest<FeeAssessment>({
+    method: 'POST',
+    path: `/filings/${id(filingId)}/fee-assessments`,
+    body: { feeScheduleId }
+  }, config);
+}
+
 export function createPayment(assessmentId: string, config?: ApiClientConfig) {
   return apiRequest<Payment>({ method: 'POST', path: `/fee-assessments/${id(assessmentId)}/payments`, body: {} }, config);
 }
@@ -244,6 +252,16 @@ export function completeRefund(refundRequestId: string, providerRefundReference:
     path: `/finance/refunds/${id(refundRequestId)}/complete`,
     body: { providerRefundReference }
   }, config);
+}
+
+export function listFinancePayments(status?: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiRequest<Payment[]>({ method: 'GET', path: `/finance/payments${query}`, signal }, config);
+}
+
+export function listRefunds(status?: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiRequest<RefundRequest[]>({ method: 'GET', path: `/finance/refunds${query}`, signal }, config);
 }
 
 export function listReconciliationExceptions(config?: ApiClientConfig, signal?: AbortSignal) {
