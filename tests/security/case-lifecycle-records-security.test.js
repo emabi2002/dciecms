@@ -6,7 +6,8 @@ const fs = require('node:fs');
 const path = require('node:path');
 
 const { PostgresRepository } = require('../../services/api/src/postgres-repository');
-const { hasPermission } = require('../../packages/rbac');
+const { CaseLifecycleRecordsService } = require('../../services/api/src/case-lifecycle-records-service');
+const { hasPermission, AccessDeniedError } = require('../../packages/rbac');
 
 class FakeQueryable {
   constructor(rows = []) {
@@ -83,6 +84,37 @@ test('RECORDS role cannot acquire judicial or disposal-approval authority', () =
   for (const permission of ['case.disposition', 'case.close', 'case.reopen', 'judgment.issue', 'hearing.schedule', 'records.disposal.approve']) {
     assert.equal(hasPermission(records, permission), false, `RECORDS must not have ${permission}`);
   }
+});
+
+test('records actor cannot read or mutate a case outside verified court scope', async () => {
+  let mutationAttempted = false;
+  const service = new CaseLifecycleRecordsService({
+    repository: {
+      async getCase() {
+        return {
+          caseId: 'case-b',
+          caseNumber: 'LAE-CIVIL-2026-000001',
+          filingId: 'filing-b',
+          paymentId: 'payment-b',
+          courtId: 'COURT-B',
+          caseTypeCode: 'CIVIL',
+          status: 'CLOSED',
+          assignedToSubject: null
+        };
+      },
+      async getCaseRecordControl() {
+        mutationAttempted = true;
+        return null;
+      }
+    },
+    auditStore: { async append() { throw new Error('audit must not run after cross-court denial'); } }
+  });
+
+  await assert.rejects(
+    () => service.getCaseRecordControl(actor('RECORDS'), 'case-b'),
+    AccessDeniedError
+  );
+  assert.equal(mutationAttempted, false, 'records repository read must stop before cross-court record access');
 });
 
 test('case lifecycle records implementation exposes no physical deletion or disposal-execution code path', () => {
