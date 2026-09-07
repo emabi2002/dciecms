@@ -8,6 +8,7 @@ import type {
   HearingRecord,
   JudgmentRecord,
   Payment,
+  PaymentSession,
   ProceedingRecord,
   Receipt,
   Reconciliation,
@@ -51,6 +52,11 @@ export type ApiClientConfig = Partial<RuntimeConfig> & {
 
 type ResolvedApiClientConfig = RuntimeConfig & {
   accessTokenProvider?: AccessTokenProvider;
+};
+
+type PaymentSessionWire = {
+  checkoutUrl: string;
+  expiresAt?: string | null;
 };
 
 function joinUrl(baseUrl: string, path: string): string {
@@ -179,8 +185,16 @@ export function createPayment(assessmentId: string, config?: ApiClientConfig) {
   return apiRequest<Payment>({ method: 'POST', path: `/fee-assessments/${id(assessmentId)}/payments`, body: {} }, config);
 }
 
-export function confirmPayment(paymentId: string, providerReference: string, config?: ApiClientConfig) {
-  return apiRequest<Payment>({ method: 'POST', path: `/payments/${id(paymentId)}/confirm`, body: { providerReference } }, config);
+export async function createPaymentSession(paymentId: string, config?: ApiClientConfig): Promise<PaymentSession> {
+  const wire = await apiRequest<PaymentSessionWire>({
+    method: 'POST',
+    path: `/payments/${id(paymentId)}/sessions`,
+    body: {}
+  }, config);
+  return {
+    checkoutUrl: wire.checkoutUrl,
+    expiresAt: wire.expiresAt ?? null
+  };
 }
 
 export function issueReceipt(paymentId: string, config?: ApiClientConfig) {
