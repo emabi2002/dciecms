@@ -38,6 +38,14 @@ test('PostgresRepository installs the R3 finance completion persistence API', ()
   ]) assert.equal(typeof repo[method], 'function', method);
 });
 
+test('fee schedule activation prevents overlapping global and court-specific authoritative schedules', async () => {
+  const db = new CaptureDb();
+  const repo = new PostgresRepository(db);
+  await assert.rejects(() => repo.activateFeeSchedule({ feeScheduleId:'fs-1', actorSubject:'mgr-a', at:'2026-09-07T01:00:00Z' }), /schedule|overlap|state/i);
+  const { text } = db.calls.at(-1);
+  assert.match(text,/c\.court_id\s+IS\s+NULL\s+OR\s+other\.court_id\s+IS\s+NULL\s+OR\s+other\.court_id\s*=\s*c\.court_id/i);
+});
+
 test('payment workbench queue minimizes its read model and excludes provider reference', async () => {
   const db = new CaptureDb([{
     payment_id:'p-1',assessment_id:'a-1',court_id:'COURT-A',amount_minor:'1000',currency:'PGK',status:'PENDING',
@@ -74,6 +82,17 @@ test('refund approval SQL enforces maker-checker and state-conditional decision'
   assert.match(text,/status='REQUESTED'/i);
   assert.match(text,/requested_by_subject\s*<>\s*\$2/i);
   assert.match(text,/FOR UPDATE/i);
+});
+
+test('refund completion SQL locks approved request and payment before recording evidence and totals', async () => {
+  const db = new CaptureDb();
+  const repo = new PostgresRepository(db);
+  await assert.rejects(() => repo.completeRefundRequest({ refundRequestId:'r-1', actorSubject:'mgr-a', providerRefundReference:'EXT-1', at:'2026-09-07T02:00:00Z' }), /refund|approved|safely|conflict/i);
+  const { text } = db.calls.at(-1);
+  assert.match(text,/status='APPROVED'\s+FOR UPDATE/i);
+  assert.match(text,/p\.status='CONFIRMED'\s+FOR UPDATE OF p/i);
+  assert.match(text,/p\.refunded_amount_minor\s*\+\s*r\.amount_minor\s*<=\s*p\.amount_minor/i);
+  assert.match(text,/SET refunded_amount_minor\s*=\s*p\.refunded_amount_minor\s*\+\s*c\.amount_minor/i);
 });
 
 test('adjustment approval cannot rewrite confirmed payment evidence and enforces maker-checker', async () => {
