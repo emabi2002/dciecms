@@ -22,6 +22,8 @@ test('HTTP dispatches all governed R3 finance completion routes', async () => {
   const service={
     async createFeeSchedule(_a,input){calls.push(['createFeeSchedule',input]);return {feeScheduleId:'fs-1',status:'DRAFT'};},
     async listFeeSchedules(_a,input){calls.push(['listFeeSchedules',input]);return [];},
+    async listFinancePayments(_a,input){calls.push(['listFinancePayments',input]);return [{paymentId:'pay-1',status:'PENDING'}];},
+    async listRefunds(_a,input){calls.push(['listRefunds',input]);return [{refundRequestId:'refund-q1',status:'REQUESTED'}];},
     async getFeeSchedule(_a,id){calls.push(['getFeeSchedule',id]);return {feeScheduleId:id,status:'DRAFT'};},
     async activateFeeSchedule(_a,id){calls.push(['activateFeeSchedule',id]);return {feeScheduleId:id,status:'ACTIVE'};},
     async retireFeeSchedule(_a,id){calls.push(['retireFeeSchedule',id]);return {feeScheduleId:id,status:'RETIRED'};},
@@ -41,6 +43,8 @@ test('HTTP dispatches all governed R3 finance completion routes', async () => {
     const cases=[
       ['POST','/finance/fee-schedules',{courtId:'COURT-A',caseTypeCode:'CIVIL',feeCode:'FILING',description:'Civil filing',amountMinor:1200,effectiveFrom:'2026-09-01'},201,'DRAFT'],
       ['GET','/finance/fee-schedules?status=ACTIVE',undefined,200,undefined],
+      ['GET','/finance/payments?status=PENDING',undefined,200,undefined],
+      ['GET','/finance/refunds?status=REQUESTED',undefined,200,undefined],
       ['GET','/finance/fee-schedules/fs-1',undefined,200,'DRAFT'],
       ['POST','/finance/fee-schedules/fs-1/activate',{},200,'ACTIVE'],
       ['POST','/finance/fee-schedules/fs-1/retire',{},200,'RETIRED'],
@@ -62,11 +66,13 @@ test('HTTP dispatches all governed R3 finance completion routes', async () => {
     }
   });
   assert.deepEqual(calls.map(c=>c[0]),[
-    'createFeeSchedule','listFeeSchedules','getFeeSchedule','activateFeeSchedule','retireFeeSchedule',
+    'createFeeSchedule','listFeeSchedules','listFinancePayments','listRefunds','getFeeSchedule','activateFeeSchedule','retireFeeSchedule',
     'requestPaymentAdjustment','getPaymentAdjustment','approvePaymentAdjustment','rejectPaymentAdjustment',
     'requestRefund','getRefund','approveRefund','rejectRefund','completeRefund','rejectReconciliation','listReconciliationExceptions'
   ]);
   assert.deepEqual(calls[1][1],{status:'ACTIVE'});
+  assert.deepEqual(calls[2][1],{status:'PENDING'});
+  assert.deepEqual(calls[3][1],{status:'REQUESTED'});
 });
 
 test('HTTP exposes no provider refund execution or destructive finance route', async () => {
