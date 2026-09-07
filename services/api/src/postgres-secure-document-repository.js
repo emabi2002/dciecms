@@ -223,6 +223,7 @@ function installSecureDocumentRepository(PostgresRepository) {
           WHERE replacement.document_id=$2
             AND replacement.filing_id=original.filing_id
             AND replacement.court_id=original.court_id
+            AND replacement.prior_document_id=original.document_id
             AND replacement.status='ACTIVE'
             AND replacement.document_id <> original.document_id
         )
