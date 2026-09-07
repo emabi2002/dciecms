@@ -124,6 +124,13 @@ function installPaymentIntegrationRepository(PostgresRepository) {
     return mapPayment(result.rows[0]);
   };
 
+  proto.getPaymentProviderEvent = async function getPaymentProviderEvent(eventRecordId) {
+    const result = await this.db.query(`SELECT ${PROVIDER_EVENT_COLUMNS}
+      FROM finance.payment_provider_events
+      WHERE payment_provider_event_record_id=$1`, [eventRecordId]);
+    return mapProviderEvent(result.rows[0]);
+  };
+
   proto.recordPaymentProviderEvent = async function recordPaymentProviderEvent({
     providerCode,
     providerEventId,
