@@ -219,6 +219,8 @@ function createHttpApp(service, actorResolver) {
 
       if (req.method === 'POST' && path === '/finance/fee-schedules') return send(res, 201, await service.createFeeSchedule(actor, await readJson(req)));
       if (req.method === 'GET' && path === '/finance/fee-schedules') return send(res, 200, await service.listFeeSchedules(actor, { status: url.searchParams.get('status') || undefined }));
+      if (req.method === 'GET' && path === '/finance/payments') return send(res, 200, await service.listFinancePayments(actor, { status: url.searchParams.get('status') || undefined }));
+      if (req.method === 'GET' && path === '/finance/refunds') return send(res, 200, await service.listRefunds(actor, { status: url.searchParams.get('status') || undefined }));
       const feeScheduleGet = path.match(/^\/finance\/fee-schedules\/([^/]+)$/);
       if (req.method === 'GET' && feeScheduleGet) return send(res, 200, await service.getFeeSchedule(actor, feeScheduleGet[1]));
       const feeScheduleActivate = path.match(/^\/finance\/fee-schedules\/([^/]+)\/activate$/);
