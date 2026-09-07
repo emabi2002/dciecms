@@ -13,7 +13,7 @@ class MemoryOutbox { constructor(){this.events=[];} async enqueue(e){this.events
 
 function baseRepo(){
   const adjustment = { adjustmentId:'adj-1',assessmentId:'assess-1',paymentId:null,courtId:'COURT-A',adjustmentType:'WAIVER',originalAmountMinor:1000,amountDeltaMinor:-1000,resultingAmountMinor:0,currency:'PGK',status:'REQUESTED',reason:'approved waiver',requestedBy:'fin-a',requestedAt:'2026-09-07T00:00:00.000Z' };
-  const refund = { refundRequestId:'refund-1',paymentId:'pay-1',courtId:'COURT-A',amountMinor:500,currency:'PGK',status:'REQUESTED',reason:'duplicate',requestedBy:'fin-a',requestedAt:'2026-09-07T00:00:00.000Z' };
+  let refund = { refundRequestId:'refund-1',paymentId:'pay-1',courtId:'COURT-A',amountMinor:500,currency:'PGK',status:'REQUESTED',reason:'duplicate',requestedBy:'fin-a',requestedAt:'2026-09-07T00:00:00.000Z' };
   const reconciliation = { reconciliationId:'rec-1',paymentId:'pay-1',courtId:'COURT-A',status:'PREPARED',preparedBy:'fin-a',preparedAt:'2026-09-07T00:00:00.000Z' };
   return {
     async getFeeAssessment(id){ return id==='assess-1'?{assessmentId:id,courtId:'COURT-A',amountMinor:1000,currency:'PGK',status:'ASSESSED'}:null; },
@@ -28,9 +28,9 @@ function baseRepo(){
     async approvePaymentAdjustment(){ return {...adjustment,status:'APPROVED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
     async rejectPaymentAdjustment(){ return {...adjustment,status:'REJECTED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
     async createRefundRequest(){ return refund; }, async getRefundRequest(){ return refund; },
-    async approveRefundRequest(){ return {...refund,status:'APPROVED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
-    async rejectRefundRequest(){ return {...refund,status:'REJECTED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
-    async completeRefundRequest(){ return {...refund,status:'COMPLETED',decidedBy:'mgr-a',providerRefundReference:'EXT-1',completedBy:'mgr-a',completedAt:'2026-09-07T02:00:00.000Z'}; },
+    async approveRefundRequest(){ refund={...refund,status:'APPROVED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; return refund; },
+    async rejectRefundRequest(){ refund={...refund,status:'REJECTED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; return refund; },
+    async completeRefundRequest(){ refund={...refund,status:'COMPLETED',providerRefundReference:'EXT-1',completedBy:'mgr-a',completedAt:'2026-09-07T02:00:00.000Z'}; return refund; },
     async rejectReconciliation(){ return {...reconciliation,status:'REJECTED',exceptionCode:'BANK_MISMATCH',rejectionReason:'difference',rejectedBy:'mgr-a',rejectedAt:'2026-09-07T01:00:00.000Z'}; },
     async listReconciliationExceptions(){ return [{...reconciliation,status:'REJECTED',exceptionCode:'BANK_MISMATCH'}]; }
   };
