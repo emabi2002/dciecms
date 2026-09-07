@@ -1,7 +1,7 @@
 'use strict';
 
 const PAYMENT_COLUMNS = `payment_id,assessment_id,court_id,amount_minor,currency,status,refunded_amount_minor,
-  provider_reference,created_by_subject,created_at,confirmed_by_subject,confirmed_at`;
+  created_by_subject,created_at,confirmed_by_subject,confirmed_at`;
 const REFUND_COLUMNS = `refund_request_id,payment_id,court_id,amount_minor,currency,reason,status,
   requested_by_subject,requested_at,decided_by_subject,decided_at,decision_reason,
   provider_refund_reference,completed_by_subject,completed_at`;
@@ -15,7 +15,7 @@ function mapPayment(row) {
   return Object.freeze({
     paymentId:row.payment_id, assessmentId:row.assessment_id, courtId:row.court_id,
     amountMinor:Number(row.amount_minor), currency:row.currency, status:row.status,
-    refundedAmountMinor:Number(row.refunded_amount_minor || 0), providerReference:row.provider_reference || null,
+    refundedAmountMinor:Number(row.refunded_amount_minor || 0),
     createdBy:row.created_by_subject, createdAt:iso(row.created_at),
     confirmedBy:row.confirmed_by_subject || null, confirmedAt:iso(row.confirmed_at) || null
   });
