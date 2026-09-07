@@ -42,9 +42,12 @@ export type FeeAssessment = {
   assessmentId: string;
   filingId: string;
   courtId: string;
+  feeScheduleId?: string | null;
   amountMinor: number;
   currency: string;
   status: string;
+  assessedBy?: string;
+  assessedAt?: string;
   createdAt?: string;
 };
 
@@ -55,7 +58,11 @@ export type Payment = {
   amountMinor: number;
   currency: string;
   status: string;
+  refundedAmountMinor?: number;
   providerReference?: string | null;
+  createdBy?: string;
+  createdAt?: string;
+  confirmedBy?: string | null;
   confirmedAt?: string | null;
 };
 
