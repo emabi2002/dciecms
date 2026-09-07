@@ -88,6 +88,21 @@ test('getPaymentProviderBinding returns canonical provider evidence without call
   assert.equal(payment.providerCode, 'approved-gateway');
 });
 
+test('getPaymentProviderEvent reloads verified canonical inbox evidence by record id', async () => {
+  const db = dbWith(async (text, params) => {
+    assert.match(text, /SELECT[\s\S]+FROM\s+finance\.payment_provider_events/i);
+    assert.match(text, /payment_provider_event_record_id\s*=\s*\$1/i);
+    assert.deepEqual(params, [EVENT_ROW.payment_provider_event_record_id]);
+    return { rows: [EVENT_ROW] };
+  });
+  const repo = new PostgresRepository(db);
+  const event = await repo.getPaymentProviderEvent(EVENT_ROW.payment_provider_event_record_id);
+  assert.equal(event.eventRecordId, EVENT_ROW.payment_provider_event_record_id);
+  assert.equal(event.providerEventId, 'evt-1');
+  assert.equal(event.paymentId, PAYMENT_ROW.payment_id);
+  assert.equal(event.processingStatus, 'RECEIVED');
+});
+
 test('recordPaymentProviderEvent is idempotent by provider code and provider event id', async () => {
   let insertCount = 0;
   const db = dbWith(async text => {
