@@ -83,7 +83,7 @@ function installFinanceCompletionRepository(PostgresRepository) {
         AND NOT EXISTS (
           SELECT 1 FROM finance.fee_schedules other
           WHERE other.fee_schedule_id<>c.fee_schedule_id AND other.status='ACTIVE'
-            AND other.court_id IS NOT DISTINCT FROM c.court_id
+            AND (c.court_id IS NULL OR other.court_id IS NULL OR other.court_id=c.court_id)
             AND other.case_type_code=c.case_type_code AND other.fee_code=c.fee_code
             AND (other.effective_to IS NULL OR other.effective_to>=c.effective_from)
             AND (c.effective_to IS NULL OR c.effective_to>=other.effective_from)
