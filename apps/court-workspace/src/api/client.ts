@@ -12,6 +12,7 @@ import type {
   ProceedingRecord,
   Receipt,
   Reconciliation,
+  RefundRequest,
   WorkflowTask
 } from './types';
 
@@ -181,6 +182,14 @@ export function assessFee(filingId: string, amountMinor: number, currency = 'PGK
   return apiRequest<FeeAssessment>({ method: 'POST', path: `/filings/${id(filingId)}/fee-assessments`, body: { amountMinor, currency } }, config);
 }
 
+export function assessFeeBySchedule(filingId: string, feeScheduleId: string, config?: ApiClientConfig) {
+  return apiRequest<FeeAssessment>({
+    method: 'POST',
+    path: `/filings/${id(filingId)}/fee-assessments`,
+    body: { feeScheduleId }
+  }, config);
+}
+
 export function createPayment(assessmentId: string, config?: ApiClientConfig) {
   return apiRequest<Payment>({ method: 'POST', path: `/fee-assessments/${id(assessmentId)}/payments`, body: {} }, config);
 }
@@ -207,6 +216,56 @@ export function createReconciliation(paymentId: string, config?: ApiClientConfig
 
 export function certifyReconciliation(reconciliationId: string, config?: ApiClientConfig) {
   return apiRequest<Reconciliation>({ method: 'POST', path: `/reconciliations/${id(reconciliationId)}/certify`, body: {} }, config);
+}
+
+export function requestRefund(paymentId: string, amountMinor: number, reason: string, config?: ApiClientConfig) {
+  return apiRequest<RefundRequest>({
+    method: 'POST',
+    path: `/payments/${id(paymentId)}/refunds`,
+    body: { amountMinor, reason }
+  }, config);
+}
+
+export function getRefund(refundRequestId: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<RefundRequest>({ method: 'GET', path: `/finance/refunds/${id(refundRequestId)}`, signal }, config);
+}
+
+export function approveRefund(refundRequestId: string, decisionReason: string, config?: ApiClientConfig) {
+  return apiRequest<RefundRequest>({
+    method: 'POST',
+    path: `/finance/refunds/${id(refundRequestId)}/approve`,
+    body: { decisionReason }
+  }, config);
+}
+
+export function rejectRefund(refundRequestId: string, decisionReason: string, config?: ApiClientConfig) {
+  return apiRequest<RefundRequest>({
+    method: 'POST',
+    path: `/finance/refunds/${id(refundRequestId)}/reject`,
+    body: { decisionReason }
+  }, config);
+}
+
+export function completeRefund(refundRequestId: string, providerRefundReference: string, config?: ApiClientConfig) {
+  return apiRequest<RefundRequest>({
+    method: 'POST',
+    path: `/finance/refunds/${id(refundRequestId)}/complete`,
+    body: { providerRefundReference }
+  }, config);
+}
+
+export function listFinancePayments(status?: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiRequest<Payment[]>({ method: 'GET', path: `/finance/payments${query}`, signal }, config);
+}
+
+export function listRefunds(status?: string, config?: ApiClientConfig, signal?: AbortSignal) {
+  const query = status ? `?status=${encodeURIComponent(status)}` : '';
+  return apiRequest<RefundRequest[]>({ method: 'GET', path: `/finance/refunds${query}`, signal }, config);
+}
+
+export function listReconciliationExceptions(config?: ApiClientConfig, signal?: AbortSignal) {
+  return apiRequest<Reconciliation[]>({ method: 'GET', path: '/finance/reconciliation-exceptions', signal }, config);
 }
 
 export function openCase(filingId: string, paymentId: string, config?: ApiClientConfig) {
