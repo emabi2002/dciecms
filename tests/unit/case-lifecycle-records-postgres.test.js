@@ -25,6 +25,8 @@ test('migration 0015 is additive and denies destructive records operations', () 
   assert.match(sql, /REVOKE DELETE ON case_mgmt\.case_lifecycle_events FROM PUBLIC/i);
   assert.match(sql, /REVOKE DELETE ON records\.case_record_controls FROM PUBLIC/i);
   assert.match(sql, /REVOKE DELETE ON records\.disposal_requests FROM PUBLIC/i);
+  assert.match(sql, /CREATE OR REPLACE FUNCTION case_mgmt\.enforce_case_lifecycle_event_immutability\(\)/i);
+  assert.match(sql, /BEFORE UPDATE OR DELETE ON case_mgmt\.case_lifecycle_events/i);
   assert.doesNotMatch(sql, /DROP TABLE/i);
   assert.doesNotMatch(sql, /DELETE\s+FROM/i);
 });
