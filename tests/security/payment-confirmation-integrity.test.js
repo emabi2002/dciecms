@@ -16,30 +16,6 @@ function makeFixture() {
     providerCode: 'approved-gateway',
     providerPaymentReference: 'gw-pay-1'
   };
-  const counters = { confirm: 0, receipt: 0, caseOpen: 0 };
-  const repo = {
-    payment,
-    async getPaymentProviderBinding(id) { return id === this.payment.paymentId ? { ...this.payment } : null; },
-    async confirmPaymentFromProviderEvidence(input) {
-      counters.confirm += 1;
-      this.payment = { ...this.payment, status: 'CONFIRMED', confirmedAt: input.confirmedAt, confirmedBy: input.actorSubject };
-      return { ...this.payment };
-    },
-    async transitionPaymentProviderOutcome() { throw new Error('not expected'); },
-    async markPaymentProviderEventProcessed(input) { return { ...input, processingStatus: 'PROCESSED' }; },
-    async markPaymentProviderEventRejected(input) { return { ...input, processingStatus: 'REJECTED' }; },
-    async createReceipt() { counters.receipt += 1; throw new Error('provider processor must not issue receipt'); },
-    async openCaseForFiling() { counters.caseOpen += 1; throw new Error('provider processor must not open case'); }
-  };
-  const audit = [];
-  const outbox = [];
-  const processor = new PaymentEventProcessor({
-    repository: repo,
-    auditStore: { async append(event) { audit.push(event); } },
-    outboxStore: { async enqueue(event) { outbox.push(event); } },
-    transactionManager: { async withTransaction(work) { return work(); } },
-    clock: () => new Date('2026-09-07T01:05:00.000Z')
-  });
   const event = {
     eventRecordId: '33333333-3333-3333-3333-333333333333',
     providerCode: 'approved-gateway',
@@ -51,6 +27,34 @@ function makeFixture() {
     currency: 'PGK',
     processingStatus: 'RECEIVED'
   };
+  const counters = { confirm: 0, receipt: 0, caseOpen: 0 };
+  const repo = {
+    payment,
+    canonicalEvent: { ...event },
+    async getPaymentProviderEvent(id) {
+      return id === this.canonicalEvent.eventRecordId ? { ...this.canonicalEvent } : null;
+    },
+    async getPaymentProviderBinding(id) { return id === this.payment.paymentId ? { ...this.payment } : null; },
+    async confirmPaymentFromProviderEvidence(input) {
+      counters.confirm += 1;
+      this.payment = { ...this.payment, status: 'CONFIRMED', confirmedAt: input.confirmedAt, confirmedBy: input.actorSubject };
+      return { ...this.payment };
+    },
+    async transitionPaymentProviderOutcome() { throw new Error('not expected'); },
+    async markPaymentProviderEventProcessed(input) { return { ...this.canonicalEvent, ...input, processingStatus: 'PROCESSED' }; },
+    async markPaymentProviderEventRejected(input) { return { ...this.canonicalEvent, ...input, processingStatus: 'REJECTED' }; },
+    async createReceipt() { counters.receipt += 1; throw new Error('provider processor must not issue receipt'); },
+    async openCaseForFiling() { counters.caseOpen += 1; throw new Error('provider processor must not open case'); }
+  };
+  const audit = [];
+  const outbox = [];
+  const processor = new PaymentEventProcessor({
+    repository: repo,
+    auditStore: { async append(auditEvent) { audit.push(auditEvent); } },
+    outboxStore: { async enqueue(outboxEvent) { outbox.push(outboxEvent); } },
+    transactionManager: { async withTransaction(work) { return work(); } },
+    clock: () => new Date('2026-09-07T01:05:00.000Z')
+  });
   return { processor, repo, counters, audit, outbox, event };
 }
 
@@ -64,6 +68,7 @@ test('provider success cannot confirm when canonical amount currency provider re
   ];
   for (const variant of variants) {
     const { processor, repo, counters, audit, outbox, event } = makeFixture();
+    repo.canonicalEvent = { ...event, ...variant };
     const result = await processor.process({ ...event, ...variant });
     assert.equal(result.event.processingStatus, 'REJECTED');
     assert.equal(repo.payment.status, 'PENDING');
@@ -71,6 +76,23 @@ test('provider success cannot confirm when canonical amount currency provider re
     assert.equal(audit.length, 0);
     assert.equal(outbox.length, 0);
   }
+});
+
+test('processor reloads durable canonical inbox evidence instead of trusting forged caller fields', async () => {
+  const { processor, repo, counters, audit, outbox, event } = makeFixture();
+  repo.canonicalEvent = {
+    ...event,
+    paymentId: '44444444-4444-4444-4444-444444444444',
+    providerPaymentReference: 'durable-unrelated-reference'
+  };
+
+  const result = await processor.process({ ...event });
+
+  assert.equal(result.event.processingStatus, 'REJECTED');
+  assert.equal(repo.payment.status, 'PENDING');
+  assert.equal(counters.confirm, 0);
+  assert.equal(audit.length, 0);
+  assert.equal(outbox.length, 0);
 });
 
 test('provider success establishes only canonical payment state and cannot issue receipt or open a case', async () => {
