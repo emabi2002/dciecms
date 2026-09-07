@@ -179,7 +179,9 @@ test('provider reference correlation amount or currency mismatch rejects event a
     assert.equal(repo.payment.status, 'PENDING');
     assert.equal(repo.confirmCalls.length, 0);
     assert.equal(repo.rejectedCalls.length, 1);
-    assert.equal(auditEvents.length, 0);
+    assert.equal(auditEvents.length, 1);
+    assert.equal(auditEvents[0].action, 'finance.payment.provider_event.reject');
+    assert.equal(JSON.stringify(auditEvents).includes('gw-pay-1'), false);
     assert.equal(outboxEvents.length, 0);
   }
 });
@@ -190,7 +192,9 @@ test('success requires an eligible pending canonical payment', async () => {
   assert.equal(result.event.processingStatus, 'REJECTED');
   assert.equal(repo.confirmCalls.length, 0);
   assert.equal(repo.payment.status, 'FAILED');
-  assert.equal(auditEvents.length, 0);
+  assert.equal(auditEvents.length, 1);
+  assert.equal(auditEvents[0].action, 'finance.payment.provider_event.reject');
+  assert.equal(JSON.stringify(auditEvents).includes('gw-pay-1'), false);
   assert.equal(outboxEvents.length, 0);
 });
 
@@ -246,6 +250,8 @@ test('unknown normalized event fails closed without payment mutation', async () 
   assert.equal(repo.payment.status, 'PENDING');
   assert.equal(repo.confirmCalls.length, 0);
   assert.equal(repo.outcomeCalls.length, 0);
-  assert.equal(auditEvents.length, 0);
+  assert.equal(auditEvents.length, 1);
+  assert.equal(auditEvents[0].action, 'finance.payment.provider_event.reject');
+  assert.equal(JSON.stringify(auditEvents).includes('gw-pay-1'), false);
   assert.equal(outboxEvents.length, 0);
 });
