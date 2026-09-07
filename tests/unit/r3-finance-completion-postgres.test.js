@@ -38,6 +38,19 @@ test('PostgresRepository installs the R3 finance completion persistence API', ()
   ]) assert.equal(typeof repo[method], 'function', method);
 });
 
+test('payment workbench queue minimizes its read model and excludes provider reference', async () => {
+  const db = new CaptureDb([{
+    payment_id:'p-1',assessment_id:'a-1',court_id:'COURT-A',amount_minor:'1000',currency:'PGK',status:'PENDING',
+    refunded_amount_minor:'0',provider_reference:'PROVIDER-SENSITIVE-REF',created_by_subject:'fin-a',
+    created_at:'2026-09-07T00:00:00Z',confirmed_by_subject:null,confirmed_at:null
+  }]);
+  const repo = new PostgresRepository(db);
+  const rows = await repo.listFinancePayments({ courtIds:['COURT-A'], status:'PENDING' });
+  const { text } = db.calls.at(-1);
+  assert.doesNotMatch(text,/provider_reference/i);
+  assert.equal('providerReference' in rows[0],false);
+});
+
 test('refund request SQL locks canonical payment and enforces cumulative refund ceiling', async () => {
   const db = new CaptureDb();
   const repo = new PostgresRepository(db);
