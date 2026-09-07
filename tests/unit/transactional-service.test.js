@@ -19,6 +19,11 @@ const financeCompletionMutations = [
   'completeRefund',
   'rejectReconciliation'
 ];
+const financeAuditReads = [
+  'listFinancePayments',
+  'listRefunds',
+  'listReconciliationExceptions'
+];
 
 const expectedMutations = [
   'createParty',
@@ -68,7 +73,8 @@ const expectedMutations = [
   'requestCaseRecordDisposal',
   'approveCaseRecordDisposal',
   'rejectCaseRecordDisposal',
-  ...financeCompletionMutations
+  ...financeCompletionMutations,
+  ...financeAuditReads
 ];
 
 test('transactional service registry contains every current HTTP mutation or audit-writing method', () => {
@@ -164,8 +170,8 @@ test('records read and mutations are transaction-wrapped because they persist au
   }
 });
 
-test('finance completion mutations are transaction-wrapped while finance reads remain read-only', async () => {
-  for (const method of financeCompletionMutations) {
+test('finance completion mutations and audit-writing reads share the PostgreSQL transaction', async () => {
+  for (const method of [...financeCompletionMutations, ...financeAuditReads]) {
     const calls=[];
     const service={async [method](){calls.push(method);return {ok:true};}};
     const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
