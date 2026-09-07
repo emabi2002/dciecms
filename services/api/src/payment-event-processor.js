@@ -112,6 +112,19 @@ class PaymentEventProcessor {
       resultCode,
       processedAt
     });
+    await this.auditStore.append({
+      actorUserId: SYSTEM_ACTOR,
+      effectiveRoles: [],
+      action: 'finance.payment.provider_event.reject',
+      resourceType: 'payment_provider_event',
+      resourceId: event.eventRecordId,
+      courtId: payment?.courtId || null,
+      correlationId: null,
+      details: Object.freeze({
+        source: 'verified_provider_event',
+        resultCode
+      })
+    });
     return Object.freeze({ payment, event: rejected, duplicate: false });
   }
 
