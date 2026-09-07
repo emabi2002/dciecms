@@ -6,6 +6,8 @@ const { ConflictError, NotFoundError, ValidationError } = require('./dciecms-ser
 
 const ADJUSTMENT_TYPES = new Set(['WAIVER','EXEMPTION','CORRECTION','OTHER_ADJUSTMENT']);
 const FEE_SCHEDULE_STATES = new Set(['DRAFT','ACTIVE','RETIRED']);
+const PAYMENT_QUEUE_STATES = new Set(['PENDING','CONFIRMED','FAILED','CANCELLED','REFUNDED','REVERSED']);
+const REFUND_QUEUE_STATES = new Set(['REQUESTED','APPROVED','REJECTED','COMPLETED']);
 
 function normalizeClock(clock) {
   if (typeof clock === 'function') return clock;
@@ -144,6 +146,36 @@ class FinanceCompletionService {
       if (!FEE_SCHEDULE_STATES.has(status)) throw new ValidationError('Unknown fee schedule status');
     }
     return this.repository.listFeeSchedules({ courtIds: actor.courtIds, status });
+  }
+
+  async listFinancePayments(actor, input = {}) {
+    authorize(actor, 'finance.payment.view', {});
+    requireDependency(this.repository, 'listFinancePayments', 'repository');
+    let status = null;
+    if (input.status) {
+      status = stableCode(input.status, 'status', { max: 20 });
+      if (!PAYMENT_QUEUE_STATES.has(status)) throw new ValidationError('Unknown payment status');
+    }
+    const rows = await this.repository.listFinancePayments({ courtIds: actor.courtIds, status });
+    await this._audit(actor, 'finance.payment.queue.view', 'payment_queue', actor.courtIds.join(','), {
+      details: { courtIds: actor.courtIds, status }
+    });
+    return rows;
+  }
+
+  async listRefunds(actor, input = {}) {
+    authorize(actor, 'finance.refund.view', {});
+    requireDependency(this.repository, 'listRefundRequests', 'repository');
+    let status = null;
+    if (input.status) {
+      status = stableCode(input.status, 'status', { max: 20 });
+      if (!REFUND_QUEUE_STATES.has(status)) throw new ValidationError('Unknown refund status');
+    }
+    const rows = await this.repository.listRefundRequests({ courtIds: actor.courtIds, status });
+    await this._audit(actor, 'finance.refund.queue.view', 'refund_queue', actor.courtIds.join(','), {
+      details: { courtIds: actor.courtIds, status }
+    });
+    return rows;
   }
 
   async getFeeSchedule(actor, feeScheduleId) {
@@ -364,7 +396,11 @@ class FinanceCompletionService {
   async listReconciliationExceptions(actor) {
     authorize(actor, 'finance.reconciliation.exception.view', {});
     requireDependency(this.repository, 'listReconciliationExceptions', 'repository');
-    return this.repository.listReconciliationExceptions({ courtIds: actor.courtIds });
+    const rows = await this.repository.listReconciliationExceptions({ courtIds: actor.courtIds });
+    await this._audit(actor, 'finance.reconciliation.exception.view', 'reconciliation_exception_queue', actor.courtIds.join(','), {
+      details: { courtIds: actor.courtIds }
+    });
+    return rows;
   }
 }
 
