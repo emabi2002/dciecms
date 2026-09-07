@@ -102,6 +102,23 @@ CREATE INDEX IF NOT EXISTS finance_reconciliation_exception_idx
   ON finance.reconciliations(court_id,status,prepared_at)
   WHERE status='REJECTED' OR exception_code IS NOT NULL;
 
+CREATE OR REPLACE FUNCTION finance.prevent_issued_receipt_mutation()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.status='ISSUED' THEN
+    RAISE EXCEPTION 'Issued receipt evidence is immutable';
+  END IF;
+  RETURN CASE WHEN TG_OP='DELETE' THEN OLD ELSE NEW END;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS finance_receipt_issued_immutable_trg ON finance.receipts;
+CREATE TRIGGER finance_receipt_issued_immutable_trg
+BEFORE UPDATE OR DELETE ON finance.receipts
+FOR EACH ROW EXECUTE FUNCTION finance.prevent_issued_receipt_mutation();
+
 CREATE OR REPLACE FUNCTION finance.prevent_finalized_reconciliation_mutation()
 RETURNS trigger
 LANGUAGE plpgsql
