@@ -4,8 +4,8 @@ import { PaymentsPage } from './PaymentsPage';
 import {
   assessFee,
   certifyReconciliation,
-  confirmPayment,
   createPayment,
+  createPaymentSession,
   createReconciliation,
   issueReceipt
 } from '../api/client';
@@ -13,7 +13,7 @@ import {
 vi.mock('../api/client', () => ({
   assessFee: vi.fn(),
   createPayment: vi.fn(),
-  confirmPayment: vi.fn(),
+  createPaymentSession: vi.fn(),
   issueReceipt: vi.fn(),
   createReconciliation: vi.fn(),
   certifyReconciliation: vi.fn()
@@ -21,7 +21,7 @@ vi.mock('../api/client', () => ({
 
 const mockedAssess = vi.mocked(assessFee);
 const mockedCreatePayment = vi.mocked(createPayment);
-const mockedConfirm = vi.mocked(confirmPayment);
+const mockedCreateSession = vi.mocked(createPaymentSession);
 const mockedReceipt = vi.mocked(issueReceipt);
 const mockedReconcile = vi.mocked(createReconciliation);
 const mockedCertify = vi.mocked(certifyReconciliation);
@@ -43,9 +43,10 @@ describe('Payments and finance controls', () => {
     expect(mockedAssess).toHaveBeenCalledWith('f1', 1250, 'PGK');
   });
 
-  it('progresses assessment to pending payment and requires provider reference before confirmation', async () => {
+  it('progresses a pending payment into a provider-neutral checkout session without manual provider confirmation', async () => {
     mockedAssess.mockResolvedValue({ assessmentId: 'a1', filingId: 'f1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'ASSESSED' });
     mockedCreatePayment.mockResolvedValue({ paymentId: 'p1', assessmentId: 'a1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'PENDING' });
+    mockedCreateSession.mockResolvedValue({ checkoutUrl: 'https://checkout.example.invalid/session-a', expiresAt: null });
     render(<PaymentsPage />);
 
     fireEvent.change(screen.getByLabelText('Filing ID'), { target: { value: 'f1' } });
@@ -55,15 +56,18 @@ describe('Payments and finance controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create payment' }));
     expect(await screen.findByText('PENDING')).toBeInTheDocument();
 
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm payment' }));
-    expect(screen.getByRole('alert')).toHaveTextContent('Provider reference is required.');
-    expect(mockedConfirm).not.toHaveBeenCalled();
+    expect(screen.queryByLabelText('Provider reference')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Confirm payment' })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Start secure payment' }));
+
+    expect(mockedCreateSession).toHaveBeenCalledWith('p1');
+    const link = await screen.findByRole('link', { name: 'Continue to payment provider' });
+    expect(link).toHaveAttribute('href', 'https://checkout.example.invalid/session-a');
   });
 
-  it('shows confirmed payment, receipt and maker-checker reconciliation responses from the server', async () => {
+  it('shows receipt and maker-checker controls when canonical payment state is already confirmed by the server', async () => {
     mockedAssess.mockResolvedValue({ assessmentId: 'a1', filingId: 'f1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'ASSESSED' });
-    mockedCreatePayment.mockResolvedValue({ paymentId: 'p1', assessmentId: 'a1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'PENDING' });
-    mockedConfirm.mockResolvedValue({ paymentId: 'p1', assessmentId: 'a1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'CONFIRMED', providerReference: 'BANK-001' });
+    mockedCreatePayment.mockResolvedValue({ paymentId: 'p1', assessmentId: 'a1', courtId: 'c1', amountMinor: 1000, currency: 'PGK', status: 'CONFIRMED' });
     mockedReceipt.mockResolvedValue({ receiptId: 'r1', paymentId: 'p1', courtId: 'c1', receiptNumber: 'RCPT-001', status: 'ISSUED' });
     mockedReconcile.mockResolvedValue({ reconciliationId: 'rec1', paymentId: 'p1', courtId: 'c1', status: 'PREPARED', createdBy: 'maker' });
     mockedCertify.mockResolvedValue({ reconciliationId: 'rec1', paymentId: 'p1', courtId: 'c1', status: 'CERTIFIED', createdBy: 'maker', certifiedBy: 'checker' });
@@ -74,9 +78,6 @@ describe('Payments and finance controls', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Assess fee' }));
     await screen.findByText('ASSESSED');
     fireEvent.click(screen.getByRole('button', { name: 'Create payment' }));
-    await screen.findByText('PENDING');
-    fireEvent.change(screen.getByLabelText('Provider reference'), { target: { value: 'BANK-001' } });
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm payment' }));
     expect(await screen.findByText('CONFIRMED')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Issue receipt' }));
     expect(await screen.findByText('RCPT-001')).toBeInTheDocument();

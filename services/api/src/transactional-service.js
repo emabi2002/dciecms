@@ -19,6 +19,7 @@ const MUTATING_SERVICE_METHODS = Object.freeze([
   'acceptFiling',
   'assessFilingFee',
   'createPayment',
+  'createPaymentSession',
   'confirmPayment',
   'issueReceipt',
   'createReconciliation',

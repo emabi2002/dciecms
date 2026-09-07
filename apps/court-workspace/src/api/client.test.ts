@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import * as apiClient from './client';
 import { ApiError, apiRequest, returnFiling } from './client';
 
 afterEach(() => {
@@ -107,5 +108,42 @@ describe('Court Workspace API client', () => {
     const [, init] = fetchMock.mock.calls[0];
     expect(init.headers).not.toHaveProperty('authorization');
     expect(init.headers).not.toHaveProperty('x-dev-sub');
+  });
+
+  it('requests a provider-neutral payment session without browser-controlled settlement evidence', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      checkoutUrl: 'https://checkout.example.invalid/session-a',
+      expiresAt: '2026-09-07T03:00:00.000Z',
+      providerCode: 'must-not-cross-client-boundary',
+      providerPaymentReference: 'must-not-cross-client-boundary',
+      webhookSignature: 'must-not-cross-client-boundary'
+    }), {
+      status: 201,
+      headers: { 'content-type': 'application/json' }
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const createSession = (apiClient as unknown as {
+      createPaymentSession?: (paymentId: string, config?: { baseUrl?: string }) => Promise<Record<string, unknown>>
+    }).createPaymentSession;
+    expect(createSession).toBeTypeOf('function');
+    if (!createSession) return;
+
+    const result = await createSession('payment-1', { baseUrl: '/api' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/payments/payment-1/sessions');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({});
+    expect(result).toEqual({
+      checkoutUrl: 'https://checkout.example.invalid/session-a',
+      expiresAt: '2026-09-07T03:00:00.000Z'
+    });
+    expect(result).not.toHaveProperty('providerCode');
+    expect(result).not.toHaveProperty('providerPaymentReference');
+    expect(result).not.toHaveProperty('webhookSignature');
+  });
+
+  it('does not export the legacy browser provider-confirmation function', () => {
+    expect(apiClient).not.toHaveProperty('confirmPayment');
   });
 });
