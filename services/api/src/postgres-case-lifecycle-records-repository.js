@@ -198,13 +198,13 @@ function installCaseLifecycleRecordsRepository(PostgresRepository) {
     return mapControl(result.rows[0]);
   };
 
-  proto.assignRetention = async function assignRetention({ caseId, retentionClassCode, retentionTriggerAt, dispositionEligibleAt, actorSubject, at }) {
+  proto.assignRetention = async function assignRetention({ caseId, retentionClassCode, retentionTriggerAt, dispositionEligibleAt, at }) {
     const result = await this.db.query(`UPDATE records.case_record_controls rc
-      SET retention_class_code=$2,retention_trigger_at=$3,disposition_eligible_at=$4,updated_at=$6
+      SET retention_class_code=$2,retention_trigger_at=$3,disposition_eligible_at=$4,updated_at=$5
       FROM case_mgmt.cases c
       WHERE rc.case_id=$1 AND c.case_id=rc.case_id AND c.status='CLOSED'
         AND rc.status='ACTIVE' AND rc.legal_hold=false
-      RETURNING ${CONTROL_COLUMNS}`, [caseId, retentionClassCode, retentionTriggerAt, dispositionEligibleAt, actorSubject, at]);
+      RETURNING ${CONTROL_COLUMNS}`, [caseId, retentionClassCode, retentionTriggerAt, dispositionEligibleAt, at]);
     if (result.rows.length !== 1) throw conflict('RECORDS_STATE_CONFLICT', 'Case record is not eligible for retention assignment');
     return mapControl(result.rows[0]);
   };
