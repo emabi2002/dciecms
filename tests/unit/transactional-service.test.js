@@ -17,6 +17,7 @@ const expectedMutations = [
   'acceptFiling',
   'assessFilingFee',
   'createPayment',
+  'createPaymentSession',
   'confirmPayment',
   'issueReceipt',
   'createReconciliation',
@@ -96,6 +97,14 @@ test('download authorization is transaction-wrapped because it persists audit ev
   const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
   assert.deepEqual(await wrapped.authorizeDocumentDownload(),{ok:true});
   assert.deepEqual(calls,['BEGIN','authorize','COMMIT']);
+});
+
+test('payment session creation is transaction-wrapped because provider binding and audit are one mutation boundary', async () => {
+  const calls=[];
+  const service={async createPaymentSession(){calls.push('session');return {ok:true};}};
+  const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
+  assert.deepEqual(await wrapped.createPaymentSession(),{ok:true});
+  assert.deepEqual(calls,['BEGIN','session','COMMIT']);
 });
 
 test('transactional service preserves prototype identity and exposes service properties', () => {
