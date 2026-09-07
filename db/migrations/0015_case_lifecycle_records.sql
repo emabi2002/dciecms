@@ -103,7 +103,8 @@ CREATE INDEX IF NOT EXISTS disposal_requests_case_idx
   ON records.disposal_requests(case_id, requested_at, disposal_request_id);
 
 -- Court record evidence is never physically deleted through ordinary database roles.
-REVOKE UPDATE, DELETE ON case_mgmt.case_lifecycle_events FROM PUBLIC;
+REVOKE UPDATE ON case_mgmt.case_lifecycle_events FROM PUBLIC;
+REVOKE DELETE ON case_mgmt.case_lifecycle_events FROM PUBLIC;
 REVOKE DELETE ON records.case_record_controls FROM PUBLIC;
 REVOKE DELETE ON records.disposal_requests FROM PUBLIC;
 
