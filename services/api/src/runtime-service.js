@@ -10,6 +10,7 @@ const { createPostgresPool } = require('./postgres-runtime');
 const { createMappedDatabase } = require('./postgres-schema-mapping');
 const { SecureDocumentService } = require('./secure-document-service');
 const { CaseLifecycleRecordsService } = require('./case-lifecycle-records-service');
+const { FinanceCompletionService } = require('./finance-completion-service');
 const {
   createDocumentRuntime,
   MemoryDocumentScanStore,
@@ -161,13 +162,19 @@ function createRuntimeService({
     auditStore,
     outboxStore
   });
+  const financeCompletionService = new FinanceCompletionService({
+    repository,
+    auditStore,
+    outboxStore
+  });
 
   const service = new JudicialWorkbenchService({
     repository,
     auditStore,
     outboxStore,
     secureDocumentService,
-    caseLifecycleRecordsService
+    caseLifecycleRecordsService,
+    financeCompletionService
   });
   if (documentScanStore) service.documentScanStore = documentScanStore;
   if (documentScanWorker) service.documentScanWorker = documentScanWorker;
