@@ -37,6 +37,20 @@ CREATE TABLE IF NOT EXISTS case_mgmt.case_lifecycle_events (
 CREATE INDEX IF NOT EXISTS case_lifecycle_events_case_idx
   ON case_mgmt.case_lifecycle_events(case_id, occurred_at, lifecycle_event_id);
 
+CREATE OR REPLACE FUNCTION case_mgmt.enforce_case_lifecycle_event_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  RAISE EXCEPTION 'Case lifecycle events are immutable';
+END;
+$$;
+
+DROP TRIGGER IF EXISTS case_lifecycle_events_immutability_trg ON case_mgmt.case_lifecycle_events;
+CREATE TRIGGER case_lifecycle_events_immutability_trg
+BEFORE UPDATE OR DELETE ON case_mgmt.case_lifecycle_events
+FOR EACH ROW EXECUTE FUNCTION case_mgmt.enforce_case_lifecycle_event_immutability();
+
 CREATE SCHEMA IF NOT EXISTS records;
 
 CREATE TABLE IF NOT EXISTS records.case_record_controls (
