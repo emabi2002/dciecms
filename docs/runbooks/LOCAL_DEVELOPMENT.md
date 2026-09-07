@@ -14,10 +14,10 @@ npm test
 
 ## Start development API
 
-Authentication mode is mandatory. For local development, explicitly select the development resolver:
+Authentication mode is mandatory. For local development, explicitly select the development resolver, secure-document adapters and deterministic payment adapter:
 
 ```bash
-DCIECMS_AUTH_MODE=development DCIECMS_DOCUMENT_PIPELINE_MODE=development PORT=3000 npm start
+DCIECMS_AUTH_MODE=development DCIECMS_DOCUMENT_PIPELINE_MODE=development DCIECMS_PAYMENT_INTEGRATION_MODE=development PORT=3000 npm start
 ```
 
 The server binds to `127.0.0.1`. In `development` authentication mode only, the API accepts the `x-dev-sub`, `x-dev-roles`, `x-dev-courts` and `x-dev-grants` claim headers as local scaffolding. `NODE_ENV=production` cannot start with `DCIECMS_AUTH_MODE=development`.
@@ -92,10 +92,45 @@ Migration `db/migrations/0013_secure_document_pipeline.sql` and the isolated Sup
 
 Signed upload/download grants, provider credentials, scanner credentials and raw scanner/provider diagnostics must not be persisted in document metadata, audit records, outbox events, source control or HTTP error responses.
 
+## Payment integration boundary
+
+The repository now contains a provider-neutral payment-integration boundary, not a selected or activated production payment gateway. The safest default is `disabled`. For deterministic local/testing behavior only, explicitly use:
+
+```dotenv
+DCIECMS_PAYMENT_INTEGRATION_MODE=development
+```
+
+The development provider is test/local scaffolding only. Production cannot select it. `DCIECMS_PAYMENT_INTEGRATION_MODE=enabled` is accepted only when runtime composition is given an explicitly injected production-capable provider adapter that supports verified provider callbacks. No real provider adapter or gateway credential is constructed from `.env` by this repository work.
+
+The implemented gateway flow is:
+
+1. an authenticated user requests `POST /payments/:paymentId/sessions`;
+2. the server loads the canonical pending payment and uses its server-owned payment ID, amount and currency;
+3. the provider adapter creates a checkout session under a stable server idempotency key;
+4. the server binds the returned provider code/reference to that payment without allowing caller overrides;
+5. the HTTP response exposes only `checkoutUrl` and `expiresAt`, uses `Cache-Control: no-store`, and the session request body is bounded before service invocation;
+6. the provider callback posts to `/payment-provider/webhook`; browser/OIDC actor authentication is not used for this callback boundary;
+7. the callback body is size-bounded as raw bytes before provider verification, and only normalized verified event evidence is stored;
+8. a success event can confirm only when provider code, provider reference, payment correlation, amount and currency exactly match the canonical server-bound payment;
+9. duplicate provider events reuse the canonical durable inbox record and cannot apply the success transition twice;
+10. callback processing cannot issue a receipt or open a case directly; existing receipt/case-opening controls remain separate and depend on canonical `CONFIRMED` payment state.
+
+When payment integration is enabled, the legacy manual external-provider confirmation route is blocked. This prevents FIN/FIN-MGR users or browser code from manufacturing gateway success by supplying a provider reference. The Court Workspace therefore requests checkout sessions and does not use the former browser `confirmPayment(paymentId, providerReference)` flow for ordinary gateway processing.
+
+Provider failure, cancellation, refund and reversal are represented as durable provider outcome evidence. Refund/reversal does not destructively erase the original payment confirmation, receipt or case history. This repository does **not** implement real settlement reconciliation, provider refund API calls, chargeback handling or payout ingestion.
+
+Migration `db/migrations/0014_payment_integration.sql` and its isolated Supabase test-profile counterpart are repository-delivered artifacts only. They have **not** been applied to a live database by this work.
+
+Production gateway onboarding remains a separate gate requiring at minimum: approved provider selection/contract, merchant configuration, callback URL exposure, TLS termination, WAF/rate-limit policy, webhook signature/verification secret provisioning, provider credentials/certificates in approved secret management, controlled execution of migration `0014`, and authorized deployment. None of those actions are performed by the repository implementation.
+
+Raw callback bodies, webhook signatures, provider authorization headers, provider secrets, checkout tokens/session internals and provider diagnostic text must not be persisted in payment rows, audit events, outbox events or source control, and must not be reflected in browser-facing HTTP errors.
+
 ## Court Workspace boundary
 
 The Court Workspace API client supports a provider-neutral runtime access-token provider. When configured, it sends `Authorization: Bearer <token>` and suppresses development identity headers even if the provider temporarily has no token. The current workstream does not implement browser OIDC login, PKCE, redirect handling or a government IdP SDK.
 
+For gateway flow, the Court Workspace requests only provider-neutral payment checkout sessions. It receives only the checkout URL and expiry and does not receive or manufacture provider callback evidence.
+
 ## Current adapter boundaries
 
-Provider-neutral contracts now exist for production authentication, private document storage, secure upload/download grants, malware scanning and durable scan-job execution. No real government IdP, production object-storage provider, production KMS configuration, production malware scanner, payment provider, SMS/email provider, Government Service Bus or external agency API has been activated. Those environment-specific choices remain gated on approved endpoint/security contracts, credentials, secret-management configuration and production deployment authorization.
+Provider-neutral contracts now exist for production authentication, private document storage, secure upload/download grants, malware scanning, durable scan-job execution and payment-provider session/callback processing. No real government IdP, production object-storage provider, production KMS configuration, production malware scanner, production payment gateway, SMS/email provider, Government Service Bus or external agency API has been activated. Those environment-specific choices remain gated on approved endpoint/security contracts, credentials, secret-management configuration, controlled migration execution and production deployment authorization.
