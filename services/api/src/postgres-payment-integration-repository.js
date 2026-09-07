@@ -68,6 +68,14 @@ function conflict(code, message) {
   return error;
 }
 
+function requireResultCode(value) {
+  const code = String(value || '').trim().toUpperCase();
+  if (!/^[A-Z0-9_]{1,80}$/.test(code)) {
+    throw new TypeError('Payment provider event result code must be a sanitized stable code');
+  }
+  return code;
+}
+
 function installPaymentIntegrationRepository(PostgresRepository) {
   if (!PostgresRepository?.prototype) throw new TypeError('PostgresRepository constructor is required');
   const proto = PostgresRepository.prototype;
@@ -191,6 +199,96 @@ function installPaymentIntegrationRepository(PostgresRepository) {
       throw conflict('PAYMENT_PROVIDER_EVIDENCE_CONFLICT', 'Provider payment evidence does not match the canonical payment');
     }
     return mapPayment(result.rows[0]);
+  };
+
+  proto.transitionPaymentProviderOutcome = async function transitionPaymentProviderOutcome({
+    paymentId,
+    providerCode,
+    providerPaymentReference,
+    normalizedEventType,
+    at,
+    resultCode
+  }) {
+    const type = String(normalizedEventType || '').trim().toUpperCase();
+    const code = requireResultCode(resultCode || type);
+    let sql;
+    let params;
+
+    if (type === 'PAYMENT_FAILED') {
+      sql = `UPDATE finance.payments
+        SET status='FAILED', provider_status='FAILED', failure_code=$5
+        WHERE payment_id=$1
+          AND provider_code=$2
+          AND provider_payment_reference=$3
+          AND status='PENDING'
+        RETURNING ${PAYMENT_COLUMNS}`;
+      params = [paymentId, providerCode, providerPaymentReference, at, code];
+    } else if (type === 'PAYMENT_CANCELLED') {
+      sql = `UPDATE finance.payments
+        SET status='CANCELLED', provider_status='CANCELLED', cancelled_at=$4
+        WHERE payment_id=$1
+          AND provider_code=$2
+          AND provider_payment_reference=$3
+          AND status='PENDING'
+        RETURNING ${PAYMENT_COLUMNS}`;
+      params = [paymentId, providerCode, providerPaymentReference, at];
+    } else if (type === 'PAYMENT_REFUNDED') {
+      sql = `UPDATE finance.payments
+        SET status='REFUNDED', provider_status='REFUNDED', refunded_at=$4
+        WHERE payment_id=$1
+          AND provider_code=$2
+          AND provider_payment_reference=$3
+          AND status='CONFIRMED'
+        RETURNING ${PAYMENT_COLUMNS}`;
+      params = [paymentId, providerCode, providerPaymentReference, at];
+    } else if (type === 'PAYMENT_REVERSED') {
+      sql = `UPDATE finance.payments
+        SET status='REFUNDED', provider_status='REVERSED', reversed_at=$4
+        WHERE payment_id=$1
+          AND provider_code=$2
+          AND provider_payment_reference=$3
+          AND status='CONFIRMED'
+        RETURNING ${PAYMENT_COLUMNS}`;
+      params = [paymentId, providerCode, providerPaymentReference, at];
+    } else {
+      throw new TypeError('Unsupported canonical payment provider outcome');
+    }
+
+    const result = await this.db.query(sql, params);
+    if (result.rows.length !== 1) {
+      throw conflict('PAYMENT_PROVIDER_OUTCOME_CONFLICT', 'Payment is not eligible for the verified provider outcome');
+    }
+    return mapPayment(result.rows[0]);
+  };
+
+  async function finalizeProviderEvent(repository, processingStatus, {
+    eventRecordId,
+    resultCode,
+    processedAt
+  }) {
+    const code = requireResultCode(resultCode);
+    const result = await repository.db.query(`UPDATE finance.payment_provider_events
+      SET processing_status='${processingStatus}',
+          result_code=$2,
+          processed_at=$3,
+          updated_at=$3,
+          lease_owner=NULL,
+          lease_expires_at=NULL
+      WHERE payment_provider_event_record_id=$1
+        AND processing_status IN ('RECEIVED','PROCESSING')
+      RETURNING ${PROVIDER_EVENT_COLUMNS}`, [eventRecordId, code, processedAt]);
+    if (result.rows.length !== 1) {
+      throw conflict('PAYMENT_PROVIDER_EVENT_STATE_CONFLICT', 'Provider event is no longer eligible for processing');
+    }
+    return mapProviderEvent(result.rows[0]);
+  }
+
+  proto.markPaymentProviderEventProcessed = async function markPaymentProviderEventProcessed(input) {
+    return finalizeProviderEvent(this, 'PROCESSED', input);
+  };
+
+  proto.markPaymentProviderEventRejected = async function markPaymentProviderEventRejected(input) {
+    return finalizeProviderEvent(this, 'REJECTED', input);
   };
 }
 
