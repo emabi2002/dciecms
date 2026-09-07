@@ -21,6 +21,8 @@ const {
   PaymentWebhookBodyTooLargeError
 } = require('./payment-webhook-service');
 
+const PAYMENT_SESSION_BODY_MAX_BYTES = 16 * 1024;
+
 async function readJson(req) {
   let body = '';
   for await (const chunk of req) body += chunk;
@@ -30,7 +32,7 @@ async function readJson(req) {
 
 async function readRawBody(req, maxBytes) {
   if (!Number.isSafeInteger(maxBytes) || maxBytes < 1) {
-    throw new TypeError('Webhook body limit must be a positive integer');
+    throw new TypeError('Body limit must be a positive integer');
   }
 
   const declaredLength = Number(req.headers['content-length']);
@@ -47,6 +49,12 @@ async function readRawBody(req, maxBytes) {
     chunks.push(bytes);
   }
   return Buffer.concat(chunks, size);
+}
+
+async function readJsonBounded(req, maxBytes) {
+  const raw = await readRawBody(req, maxBytes);
+  if (raw.length === 0) return {};
+  try { return JSON.parse(raw.toString('utf8')); } catch { throw new ValidationError('Invalid JSON body'); }
 }
 
 function send(res, status, payload, headers = {}) {
@@ -184,7 +192,15 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && paymentPost) { await readJson(req); return send(res, 201, await service.createPayment(actor, paymentPost[1])); }
       const paymentSessionPost = path.match(/^\/payments\/([^/]+)\/sessions$/);
       if (req.method === 'POST' && paymentSessionPost) {
-        return send(res, 201, await service.createPaymentSession(actor, paymentSessionPost[1], await readJson(req)), { 'cache-control': 'no-store' });
+        const session = await service.createPaymentSession(
+          actor,
+          paymentSessionPost[1],
+          await readJsonBounded(req, PAYMENT_SESSION_BODY_MAX_BYTES)
+        );
+        return send(res, 201, {
+          checkoutUrl: session.checkoutUrl,
+          expiresAt: session.expiresAt ?? null
+        }, { 'cache-control': 'no-store' });
       }
       const confirmPost = path.match(/^\/payments\/([^/]+)\/confirm$/);
       if (req.method === 'POST' && confirmPost) {
