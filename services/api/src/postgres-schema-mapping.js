@@ -18,6 +18,7 @@ const SUPABASE_TEST_TABLES = Object.freeze({
   'finance.payments': 'dciecms_test.finance_payments',
   'finance.receipts': 'dciecms_test.finance_receipts',
   'finance.reconciliations': 'dciecms_test.finance_reconciliations',
+  'finance.payment_gateway_callbacks': 'dciecms_test.finance_payment_gateway_callbacks',
   'case_mgmt.case_number_sequences': 'dciecms_test.case_number_sequences',
   'case_mgmt.cases': 'dciecms_test.cases',
   'judicial.hearings': 'dciecms_test.judicial_hearings',
