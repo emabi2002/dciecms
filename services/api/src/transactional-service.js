@@ -58,7 +58,10 @@ const MUTATING_SERVICE_METHODS = Object.freeze([
   'approveRefund',
   'rejectRefund',
   'completeRefund',
-  'rejectReconciliation'
+  'rejectReconciliation',
+  'listFinancePayments',
+  'listRefunds',
+  'listReconciliationExceptions'
 ]);
 const MUTATING_SERVICE_METHOD_SET = new Set(MUTATING_SERVICE_METHODS);
 
