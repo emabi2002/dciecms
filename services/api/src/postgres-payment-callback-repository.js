@@ -81,27 +81,6 @@ function installPaymentCallbackRepository(PostgresRepository) {
     return mapPayment(result.rows[0]);
   };
 
-  PostgresRepository.prototype.confirmPayment = async function confirmPayment({
-    paymentId,
-    providerReference,
-    actorSubject,
-    at
-  }) {
-    const result = await this.db.query(
-      `UPDATE finance.payments
-       SET status='CONFIRMED',provider_reference=$2,confirmed_by_subject=$3,confirmed_at=$4
-       WHERE payment_id=$1 AND status='PENDING'
-       RETURNING ${PAYMENT_COLUMNS}`,
-      [paymentId, providerReference, actorSubject, at]
-    );
-    if (result.rows.length !== 1) {
-      const error = new Error('Payment was not PENDING');
-      error.code = 'PAYMENT_STATE_CONFLICT';
-      throw error;
-    }
-    return mapPayment(result.rows[0]);
-  };
-
   PostgresRepository.prototype.claimPaymentCallback = async function claimPaymentCallback({
     callbackEventId,
     providerCode,
