@@ -5,7 +5,7 @@
 
 ## Integration status
 
-The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure, a provider-neutral production OIDC/JWT authentication boundary, and a provider-neutral secure document pipeline. The authentication boundary verifies signed bearer credentials and fails closed. The secure document boundary enforces private-object lifecycle, authoritative integrity evidence, malware-scan gating, record/classification authorization and immutable document history. Neither boundary registers or activates a real government/provider integration, deploys production credentials, executes a live database migration or changes production infrastructure.
+The implementation is organized as R0/R1 court-management capabilities, R2 judicial operations, R3 durable reliability controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure, a provider-neutral production OIDC/JWT authentication boundary, a provider-neutral secure document pipeline, and a provider-neutral hardened payment-integration boundary. The authentication boundary verifies signed bearer credentials and fails closed. The secure document boundary enforces private-object lifecycle, authoritative integrity evidence, malware-scan gating, record/classification authorization and immutable document history. The payment boundary enforces server-owned payment/provider correlation, authenticated raw-body callback verification, duplicate-event idempotency and transactional confirmation integrity. None of these boundaries register or activate a real government/provider integration, deploy production credentials, execute a live database migration or change production infrastructure.
 
 ## Delivered capabilities
 
@@ -121,6 +121,31 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - production storage must attest private-object controls and encryption at rest; development memory storage cannot satisfy the production contract
 - no real production storage provider, bucket, KMS configuration, malware-scanner provider, provider credential, permanent worker schedule, live migration or production activation has been performed
 
+### Payment integration hardening
+- migration `0014_payment_integration.sql` adds server-controlled provider binding fields to canonical payments and a durable provider-event inbox with normalized event identity, correlation, outcome and processing state
+- isolated Supabase test-profile migration `db/supabase/20260907_dciecms_test_0014.sql` mirrors the payment integration schema changes without implying live execution
+- provider-neutral payment-provider contract requires session creation, webhook verification and capability attestation
+- `DCIECMS_PAYMENT_INTEGRATION_MODE` defaults to `disabled`; production rejects `development`; `enabled` requires an approved injected production-capable provider
+- deterministic development provider exists only for local/CI use and cannot satisfy production runtime requirements
+- authenticated session creation loads canonical pending payment state and uses server-owned payment ID, amount and currency; caller-supplied amount, currency, provider identity or provider reference cannot override canonical values
+- provider-session binding is conditional and stable; repeated session requests use the same server idempotency key and canonical provider binding
+- session HTTP request bodies are size bounded before service invocation; responses are `Cache-Control: no-store` and expose only `checkoutUrl` and `expiresAt`
+- provider callback endpoint uses a dedicated bounded raw-body boundary and provider verification rather than browser/OIDC actor authentication
+- raw callback bytes and headers are used for verification before payload trust; only normalized verified event evidence enters durable storage
+- raw webhook signatures, provider authorization headers, checkout tokens and provider diagnostic text are excluded from payment rows, audit and outbox evidence
+- provider events are idempotent by provider code plus provider event ID
+- success confirmation requires exact canonical match for payment ID/correlation, provider code, provider reference, amount and currency
+- mismatched provider, reference, amount, currency or payment correlation rejects the event and leaves the payment unconfirmed
+- failed/cancelled provider outcomes do not confirm; refund/reversal outcomes preserve original confirmation and historical downstream receipt/case evidence rather than destructively rewriting history
+- callback processing establishes only canonical payment state; it cannot issue a receipt or open a case directly
+- receipt issuance and case opening remain governed by their existing authorization and canonical `CONFIRMED` payment prerequisites
+- successful provider processing couples canonical payment mutation, application audit, `payment.confirmed` outbox event and provider-event processing status in one shared PostgreSQL transaction
+- audit or outbox failure rolls back the provider-success payment mutation before the event is marked processed
+- enabled gateway mode blocks the legacy manual external-provider confirmation endpoint so FIN/FIN-MGR/browser actors cannot impersonate verified provider success
+- Court Workspace ordinary gateway flow requests a provider-neutral checkout session and no longer exports the legacy browser `confirmPayment(paymentId, providerReference)` path
+- callback/session/provider failures map to sanitized HTTP errors and do not echo provider credentials or verification internals
+- no production payment provider, merchant account, webhook URL, TLS/WAF exposure, provider secret, settlement/reconciliation feed, refund API, payout integration, live migration or production deployment has been activated
+
 ## Verification controls present in the repository
 - GitHub Actions CI using Node.js 20 for the application test/build runtime
 - backend regression test execution
@@ -128,7 +153,7 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - production frontend build verification
 - live Supabase smoke-test workflow
 - Supabase test migration bundle covering R0-R2 (`0001` through `0010`)
-- incremental Supabase isolated-test migrations for R3 (`0011`), R5 (`0012`) and secure documents (`0013`)
+- incremental Supabase isolated-test migrations for R3 (`0011`), R5 (`0012`), secure documents (`0013`) and payment integration (`0014`)
 - R4 transaction-manager regressions for commit, rollback and nested repository transaction handling
 - R4 runtime regressions proving business SQL and audit SQL use one client and that audit failure rolls back business mutation
 - R5 outbox regressions for idempotent enqueue, bounded/stale claims, worker ownership, retry/dead-letter transitions and dispatcher behavior
@@ -148,17 +173,26 @@ The implementation is organized as R0/R1 court-management capabilities, R2 judic
 - HTTP secure-document tests for lifecycle route mapping, client integrity-evidence rejection and sanitized policy/access/conflict/provider failures
 - runtime tests proving development adapter composition, persistent shared repository/audit/scan-store composition, production default-disabled behavior and production refusal without approved adapters
 - transactional regressions proving secure-document mutation plus audit rollback and finalization plus scan-job rollback
-- centralized security regression gate proving signed-grant non-persistence, caller-controlled key rejection, quarantined/superseded/withdrawn denial, RESTRICTED grant enforcement, same-court cross-filer denial for `PUBLIC`, legal-hold disposition veto and provider/scanner diagnostic sanitization
+- centralized secure-document security regressions proving signed-grant non-persistence, caller-controlled key rejection, quarantined/superseded/withdrawn denial, RESTRICTED grant enforcement, same-court cross-filer denial for `PUBLIC`, legal-hold disposition veto and provider/scanner diagnostic sanitization
+- payment-provider contract/configuration regressions for production/development separation, default-disabled behavior and approved-provider attestation
+- payment-session regressions for canonical server amount/currency/payment identity, caller override rejection, court/RBAC scope, pending-only eligibility, stable idempotency and ephemeral checkout material
+- payment-webhook regressions for bounded raw-body verification before payload trust, invalid/stale proof rejection, normalized evidence only, duplicate provider-event idempotency and malformed/cross-provider fail-closed behavior
+- payment-confirmation integrity regressions for exact amount/currency/provider/reference/correlation matching, success-only confirmation and no receipt/case side effects from callback processing
+- persistent payment runtime regressions proving one shared repository/audit/outbox/transaction boundary and rollback on audit or outbox failure
+- payment HTTP security regressions proving browser/OIDC auth isolation from callbacks, manual provider-confirm blocking in enabled mode, sanitized provider failures, bounded session/callback payloads and minimal checkout response data
+- Court Workspace regressions proving session-only gateway flow and removal of the legacy browser provider-reference confirmation seam
 
-These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3, R5 and secure-document `0013` Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work. Likewise, the authentication verifier and secure-document provider contracts are repository-delivered but no real identity platform, storage provider or malware scanner has been registered or activated.
+These controls do not by themselves constitute production deployment approval or evidence that production infrastructure has been changed. The R3, R5, secure-document `0013` and payment-integration `0014` Supabase test-profile migrations are repository-delivered but have not been represented as executed against a live database by this implementation work. Likewise, the authentication verifier, secure-document provider contracts and payment-provider contract are repository-delivered but no real identity platform, storage provider, malware scanner or payment gateway has been registered or activated.
 
 ## Intentionally outstanding / environment-dependent work
 - approved government IdP selection/registration, browser login/PKCE integration and live issuer/audience/JWKS configuration
 - approved permanent outbox worker scheduling/runtime and real idempotent provider handlers
-- approved production PostgreSQL/Supabase environment and controlled live migration execution, including secure-document migration `0013`
+- approved production PostgreSQL/Supabase environment and controlled live migration execution, including secure-document migration `0013` and payment migration `0014`
 - approved production private-object storage provider/bucket, encryption/KMS policy, storage credentials and secret injection
 - approved production malware-scanner provider, endpoint/security contract, credentials and permanent scan-worker scheduling
-- production payment-gateway callback/integration
+- approved production payment gateway/provider selection, merchant account and provider adapter
+- production payment callback URL exposure, TLS termination, WAF/rate-limit policy and webhook-verification secret provisioning
+- real payment settlement/reconciliation feed, refund/chargeback API integration and payout handling
 - email/SMS notification providers
 - government-agency adapters and external integration credentials
 - production hosting, WAF, secrets-vault configuration and observability stack
@@ -171,4 +205,6 @@ These controls do not by themselves constitute production deployment approval or
 
 `DCIECMS_DOCUMENT_PIPELINE_MODE=development` is also non-production scaffolding. Production document handling defaults to disabled and cannot silently use memory storage or the scripted scanner. Production activation requires explicitly approved private/encrypted storage and malware-scanner adapters, external credentials supplied through approved secret management, controlled migration execution and an authorized deployment.
 
-The browser is not an authorization boundary. Registry workflow, request replay, document access/classification, judicial assignment, hearing/judgment authority, finance controls, case-number allocation and case-opening eligibility continue to be enforced by the API and database layers.
+`DCIECMS_PAYMENT_INTEGRATION_MODE=development` is likewise non-production scaffolding. Production payment integration defaults to disabled and cannot silently use the deterministic development provider. Production activation requires an approved provider adapter and merchant/security contract, controlled `0014` migration execution, callback TLS/WAF exposure, provider verification-secret provisioning through approved secret management and an authorized deployment. Raw callbacks, signatures, credentials, checkout tokens and provider internals must not be persisted to application evidence or exposed to browser clients.
+
+The browser is not an authorization boundary. Registry workflow, request replay, document access/classification, judicial assignment, hearing/judgment authority, finance controls, payment confirmation integrity, case-number allocation and case-opening eligibility continue to be enforced by the API and database layers.
