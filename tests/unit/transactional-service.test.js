@@ -6,6 +6,20 @@ const {
   createTransactionalService
 } = require('../../services/api/src/transactional-service');
 
+const financeCompletionMutations = [
+  'createFeeSchedule',
+  'activateFeeSchedule',
+  'retireFeeSchedule',
+  'requestPaymentAdjustment',
+  'approvePaymentAdjustment',
+  'rejectPaymentAdjustment',
+  'requestRefund',
+  'approveRefund',
+  'rejectRefund',
+  'completeRefund',
+  'rejectReconciliation'
+];
+
 const expectedMutations = [
   'createParty',
   'createFilingDraft',
@@ -53,7 +67,8 @@ const expectedMutations = [
   'releaseCaseLegalHold',
   'requestCaseRecordDisposal',
   'approveCaseRecordDisposal',
-  'rejectCaseRecordDisposal'
+  'rejectCaseRecordDisposal',
+  ...financeCompletionMutations
 ];
 
 test('transactional service registry contains every current HTTP mutation or audit-writing method', () => {
@@ -147,6 +162,21 @@ test('records read and mutations are transaction-wrapped because they persist au
     assert.deepEqual(await wrapped[method](), { ok: true });
     assert.deepEqual(calls, ['BEGIN', method, 'COMMIT'], `${method} must use the outer transaction boundary`);
   }
+});
+
+test('finance completion mutations are transaction-wrapped while finance reads remain read-only', async () => {
+  for (const method of financeCompletionMutations) {
+    const calls=[];
+    const service={async [method](){calls.push(method);return {ok:true};}};
+    const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');const value=await work();calls.push('COMMIT');return value;}});
+    assert.deepEqual(await wrapped[method](),{ok:true});
+    assert.deepEqual(calls,['BEGIN',method,'COMMIT'],`${method} must use the shared PostgreSQL transaction`);
+  }
+  const calls=[];
+  const service={async getRefund(){calls.push('read');return {ok:true};}};
+  const wrapped=createTransactionalService(service,{async withTransaction(work){calls.push('BEGIN');return work();}});
+  assert.deepEqual(await wrapped.getRefund(),{ok:true});
+  assert.deepEqual(calls,['read']);
 });
 
 test('transactional service preserves prototype identity and exposes service properties', () => {
