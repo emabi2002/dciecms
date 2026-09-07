@@ -58,6 +58,17 @@ function makeFixture() {
   return { processor, repo, counters, audit, outbox, event };
 }
 
+function assertSanitizedRejectionAudit(audit, eventRecordId) {
+  assert.equal(audit.length, 1);
+  assert.equal(audit[0].action, 'finance.payment.provider_event.reject');
+  assert.equal(audit[0].resourceType, 'payment_provider_event');
+  assert.equal(audit[0].resourceId, eventRecordId);
+  assert.equal(audit[0].details.resultCode, 'PAYMENT_EVIDENCE_MISMATCH');
+  const serialized = JSON.stringify(audit[0]);
+  assert.equal(serialized.includes('gw-pay-1'), false);
+  assert.equal(serialized.includes('evt-1'), false);
+}
+
 test('provider success cannot confirm when canonical amount currency provider reference or correlation differs', async () => {
   const variants = [
     { amountMinor: 12501 },
@@ -73,7 +84,7 @@ test('provider success cannot confirm when canonical amount currency provider re
     assert.equal(result.event.processingStatus, 'REJECTED');
     assert.equal(repo.payment.status, 'PENDING');
     assert.equal(counters.confirm, 0);
-    assert.equal(audit.length, 0);
+    assertSanitizedRejectionAudit(audit, event.eventRecordId);
     assert.equal(outbox.length, 0);
   }
 });
@@ -91,7 +102,7 @@ test('processor reloads durable canonical inbox evidence instead of trusting for
   assert.equal(result.event.processingStatus, 'REJECTED');
   assert.equal(repo.payment.status, 'PENDING');
   assert.equal(counters.confirm, 0);
-  assert.equal(audit.length, 0);
+  assertSanitizedRejectionAudit(audit, event.eventRecordId);
   assert.equal(outbox.length, 0);
 });
 
