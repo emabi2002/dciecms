@@ -143,6 +143,44 @@ describe('Court Workspace API client', () => {
     expect(result).not.toHaveProperty('webhookSignature');
   });
 
+  it('exposes court-scoped finance workbench payment and refund queues', async () => {
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ paymentId: 'p1', status: 'PENDING' }]), { status: 200, headers: { 'content-type': 'application/json' } }))
+      .mockResolvedValueOnce(new Response(JSON.stringify([{ refundRequestId: 'r1', status: 'REQUESTED' }]), { status: 200, headers: { 'content-type': 'application/json' } }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const listPayments = (apiClient as unknown as { listFinancePayments?: (status?: string, config?: { baseUrl?: string }) => Promise<unknown> }).listFinancePayments;
+    const listRefunds = (apiClient as unknown as { listRefunds?: (status?: string, config?: { baseUrl?: string }) => Promise<unknown> }).listRefunds;
+    expect(listPayments).toBeTypeOf('function');
+    expect(listRefunds).toBeTypeOf('function');
+    if (!listPayments || !listRefunds) return;
+
+    await listPayments('PENDING', { baseUrl: '/api' });
+    await listRefunds('REQUESTED', { baseUrl: '/api' });
+    expect(fetchMock.mock.calls[0][0]).toBe('/api/finance/payments?status=PENDING');
+    expect(fetchMock.mock.calls[1][0]).toBe('/api/finance/refunds?status=REQUESTED');
+    expect(fetchMock.mock.calls[0][1].method).toBe('GET');
+    expect(fetchMock.mock.calls[1][1].method).toBe('GET');
+  });
+
+  it('assesses from an authoritative fee schedule without sending browser money', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(new Response(JSON.stringify({ assessmentId: 'a1', feeScheduleId: 'fs1', amountMinor: 1250, currency: 'PGK', status: 'ASSESSED' }), {
+      status: 201,
+      headers: { 'content-type': 'application/json' }
+    }));
+    vi.stubGlobal('fetch', fetchMock);
+
+    const assessFromSchedule = (apiClient as unknown as { assessFeeBySchedule?: (filingId: string, feeScheduleId: string, config?: { baseUrl?: string }) => Promise<unknown> }).assessFeeBySchedule;
+    expect(assessFromSchedule).toBeTypeOf('function');
+    if (!assessFromSchedule) return;
+
+    await assessFromSchedule('filing-1', 'fs1', { baseUrl: '/api' });
+    const [url, init] = fetchMock.mock.calls[0];
+    expect(url).toBe('/api/filings/filing-1/fee-assessments');
+    expect(init.method).toBe('POST');
+    expect(JSON.parse(init.body)).toEqual({ feeScheduleId: 'fs1' });
+  });
+
   it('does not export the legacy browser provider-confirmation function', () => {
     expect(apiClient).not.toHaveProperty('confirmPayment');
   });
