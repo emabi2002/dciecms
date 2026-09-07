@@ -67,6 +67,16 @@ test('governed fee assessment uses authoritative active fee schedule amount and 
   assert.equal(calls[0].currency,'PGK');
 });
 
+test('active global fee schedule applies to an in-scope filing when case type and dates match', async () => {
+  const {repo,calls}=repoFixture({courtId:null});
+  const service=serviceFor(repo);
+  const assessment=await service.assessFilingFee(actor,'filing-1',{feeScheduleId:'fs-1'});
+  assert.equal(assessment.feeScheduleId,'fs-1');
+  assert.equal(assessment.courtId,'COURT-A');
+  assert.equal(assessment.amountMinor,1250);
+  assert.equal(calls[0].courtId,'COURT-A');
+});
+
 test('fee schedule assessment rejects inactive, wrong-case and wrong-court schedules', async () => {
   for (const [override, ErrorType] of [
     [{status:'DRAFT'}, ConflictError],
