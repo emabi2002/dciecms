@@ -216,6 +216,37 @@ function createHttpApp(service, actorResolver) {
       if (req.method === 'POST' && reconciliationPost) { await readJson(req); return send(res, 201, await service.createReconciliation(actor, reconciliationPost[1])); }
       const certifyPost = path.match(/^\/reconciliations\/([^/]+)\/certify$/);
       if (req.method === 'POST' && certifyPost) { await readJson(req); return send(res, 200, await service.certifyReconciliation(actor, certifyPost[1])); }
+
+      if (req.method === 'POST' && path === '/finance/fee-schedules') return send(res, 201, await service.createFeeSchedule(actor, await readJson(req)));
+      if (req.method === 'GET' && path === '/finance/fee-schedules') return send(res, 200, await service.listFeeSchedules(actor, { status: url.searchParams.get('status') || undefined }));
+      const feeScheduleGet = path.match(/^\/finance\/fee-schedules\/([^/]+)$/);
+      if (req.method === 'GET' && feeScheduleGet) return send(res, 200, await service.getFeeSchedule(actor, feeScheduleGet[1]));
+      const feeScheduleActivate = path.match(/^\/finance\/fee-schedules\/([^/]+)\/activate$/);
+      if (req.method === 'POST' && feeScheduleActivate) { await readJson(req); return send(res, 200, await service.activateFeeSchedule(actor, feeScheduleActivate[1])); }
+      const feeScheduleRetire = path.match(/^\/finance\/fee-schedules\/([^/]+)\/retire$/);
+      if (req.method === 'POST' && feeScheduleRetire) { await readJson(req); return send(res, 200, await service.retireFeeSchedule(actor, feeScheduleRetire[1])); }
+      const adjustmentRequest = path.match(/^\/fee-assessments\/([^/]+)\/adjustments$/);
+      if (req.method === 'POST' && adjustmentRequest) return send(res, 201, await service.requestPaymentAdjustment(actor, adjustmentRequest[1], await readJson(req)));
+      const adjustmentGet = path.match(/^\/finance\/adjustments\/([^/]+)$/);
+      if (req.method === 'GET' && adjustmentGet) return send(res, 200, await service.getPaymentAdjustment(actor, adjustmentGet[1]));
+      const adjustmentApprove = path.match(/^\/finance\/adjustments\/([^/]+)\/approve$/);
+      if (req.method === 'POST' && adjustmentApprove) return send(res, 200, await service.approvePaymentAdjustment(actor, adjustmentApprove[1], await readJson(req)));
+      const adjustmentReject = path.match(/^\/finance\/adjustments\/([^/]+)\/reject$/);
+      if (req.method === 'POST' && adjustmentReject) return send(res, 200, await service.rejectPaymentAdjustment(actor, adjustmentReject[1], await readJson(req)));
+      const refundRequest = path.match(/^\/payments\/([^/]+)\/refunds$/);
+      if (req.method === 'POST' && refundRequest) return send(res, 201, await service.requestRefund(actor, refundRequest[1], await readJson(req)));
+      const refundGet = path.match(/^\/finance\/refunds\/([^/]+)$/);
+      if (req.method === 'GET' && refundGet) return send(res, 200, await service.getRefund(actor, refundGet[1]));
+      const refundApprove = path.match(/^\/finance\/refunds\/([^/]+)\/approve$/);
+      if (req.method === 'POST' && refundApprove) return send(res, 200, await service.approveRefund(actor, refundApprove[1], await readJson(req)));
+      const refundReject = path.match(/^\/finance\/refunds\/([^/]+)\/reject$/);
+      if (req.method === 'POST' && refundReject) return send(res, 200, await service.rejectRefund(actor, refundReject[1], await readJson(req)));
+      const refundComplete = path.match(/^\/finance\/refunds\/([^/]+)\/complete$/);
+      if (req.method === 'POST' && refundComplete) return send(res, 200, await service.completeRefund(actor, refundComplete[1], await readJson(req)));
+      const reconciliationReject = path.match(/^\/reconciliations\/([^/]+)\/reject$/);
+      if (req.method === 'POST' && reconciliationReject) return send(res, 200, await service.rejectReconciliation(actor, reconciliationReject[1], await readJson(req)));
+      if (req.method === 'GET' && path === '/finance/reconciliation-exceptions') return send(res, 200, await service.listReconciliationExceptions(actor));
+
       const openCasePost = path.match(/^\/filings\/([^/]+)\/open-case$/);
       if (req.method === 'POST' && openCasePost) { const body = await readJson(req); return send(res, 201, await service.openCase(actor, openCasePost[1], body.paymentId)); }
       const assignCasePost = path.match(/^\/cases\/([^/]+)\/assign$/);
