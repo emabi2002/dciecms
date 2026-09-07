@@ -47,11 +47,24 @@ const approvedRow = {
   decision_reason: 'Approved after review'
 };
 
+const rejectedRow = {
+  ...requestedRow,
+  status: 'REJECTED',
+  decided_by_subject: 'cmag-1',
+  decided_at: '2033-09-07T00:01:00.000Z',
+  decision_reason: 'Retain longer'
+};
+
 function assertAtomicDocumentHoldVeto(sql) {
   assert.match(sql, /NOT\s+EXISTS\s*\(/i, 'disposal SQL must contain an atomic NOT EXISTS legal-hold veto');
   assert.match(sql, /documents\.documents/i, 'disposal SQL must re-check authoritative document state');
   assert.match(sql, /legal_hold\s*=\s*true/i, 'disposal SQL must veto document legal holds');
   assert.match(sql, /filing_id/i, 'document hold check must be scoped through the case filing');
+}
+
+function assertCaseAndControlLock(sql) {
+  assert.match(sql, /FOR\s+UPDATE\s+OF\s+(?:rc\s*,\s*c|c\s*,\s*rc)/i,
+    'disposal state check must lock both case and record-control rows');
 }
 
 test('disposal request atomically re-checks document legal holds inside the persistence mutation', async () => {
@@ -65,6 +78,7 @@ test('disposal request atomically re-checks document legal holds inside the pers
     at: '2033-09-07T00:00:00.000Z'
   });
   assertAtomicDocumentHoldVeto(db.calls[0].text);
+  assertCaseAndControlLock(db.calls[0].text);
 });
 
 test('disposal approval atomically re-checks document legal holds inside the decision mutation', async () => {
@@ -77,6 +91,22 @@ test('disposal approval atomically re-checks document legal holds inside the dec
     at: '2033-09-07T00:01:00.000Z'
   });
   assertAtomicDocumentHoldVeto(db.calls[0].text);
+  assertCaseAndControlLock(db.calls[0].text);
+});
+
+test('disposal rejection locks case and record-control state before reverting the control', async () => {
+  const db = new FakeQueryable([rejectedRow]);
+  const repo = new PostgresRepository(db);
+  await repo.rejectDisposalRequest({
+    disposalRequestId: 'dr-1',
+    actorSubject: 'cmag-1',
+    decisionReason: 'Retain longer',
+    at: '2033-09-07T00:01:00.000Z'
+  });
+  assertCaseAndControlLock(db.calls[0].text);
+  assert.match(db.calls[0].text, /c\.status\s*=\s*'CLOSED'/i,
+    'rejection must not revive ARCHIVED state after the case has been reopened');
+  assert.match(db.calls[0].text, /rc\.status\s*=\s*'DISPOSAL_REQUESTED'/i);
 });
 
 test('RECORDS role cannot acquire judicial or disposal-approval authority', () => {
