@@ -51,6 +51,37 @@ ALTER TABLE dciecms_test.documents
     superseded_by_document_id IS NULL OR superseded_by_document_id <> document_id
   );
 
+CREATE OR REPLACE FUNCTION dciecms_test.enforce_document_byte_immutability()
+RETURNS trigger
+LANGUAGE plpgsql
+AS $$
+BEGIN
+  IF OLD.finalized_at IS NOT NULL AND (
+    NEW.storage_object_key IS DISTINCT FROM OLD.storage_object_key OR
+    NEW.size_bytes IS DISTINCT FROM OLD.size_bytes OR
+    NEW.checksum_sha256 IS DISTINCT FROM OLD.checksum_sha256 OR
+    NEW.detected_mime_type IS DISTINCT FROM OLD.detected_mime_type OR
+    NEW.finalized_at IS DISTINCT FROM OLD.finalized_at OR
+    NEW.finalized_by_subject IS DISTINCT FROM OLD.finalized_by_subject OR
+    NEW.created_by_subject IS DISTINCT FROM OLD.created_by_subject OR
+    NEW.filing_id IS DISTINCT FROM OLD.filing_id OR
+    NEW.court_id IS DISTINCT FROM OLD.court_id OR
+    NEW.version_number IS DISTINCT FROM OLD.version_number OR
+    NEW.prior_document_id IS DISTINCT FROM OLD.prior_document_id
+  ) THEN
+    RAISE EXCEPTION 'Finalized document identity and byte-integrity evidence is immutable'
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS documents_bytes_immutable_trg ON dciecms_test.documents;
+CREATE TRIGGER documents_bytes_immutable_trg
+BEFORE UPDATE ON dciecms_test.documents
+FOR EACH ROW
+EXECUTE FUNCTION dciecms_test.enforce_document_byte_immutability();
+
 CREATE UNIQUE INDEX IF NOT EXISTS documents_storage_object_key_uq
   ON dciecms_test.documents(storage_object_key)
   WHERE storage_object_key IS NOT NULL;
