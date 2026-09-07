@@ -4,7 +4,7 @@ District Courts Integrated Electronic Content Management System (DCIECMS) for PN
 
 ## Current implementation status
 
-The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, a provider-neutral production OIDC/JWT authentication boundary, a provider-neutral secure document pipeline, and a provider-neutral hardened payment-integration boundary. No real government IdP, production storage/scanner provider, production payment gateway, production credential, live database migration or production deployment is implied by this repository state.
+The repository baseline now covers the executable R0/R1 court-management slice, R2 judicial operations, R3 durable controls, R4 transactional audit coupling, R5 durable event/outbox infrastructure for PostgreSQL-backed mutations, a provider-neutral production OIDC/JWT authentication boundary, a provider-neutral secure document pipeline, a provider-neutral hardened payment-integration boundary, and the blueprint R3 functional **Case Lifecycle & Records Governance** increment. The engineering labels R3/R4/R5 used for reliability controls are distinct from the functional release numbering in the Steps 1–10 blueprint. No real government IdP, production storage/scanner provider, production payment gateway, production credential, live database migration, physical records disposal or production deployment is implied by this repository state.
 
 ### R0/R1 capabilities
 - normalized development identity claims and deny-by-default RBAC/court scope
@@ -122,14 +122,31 @@ The repository baseline now covers the executable R0/R1 court-management slice, 
 - provider/internal HTTP failures are sanitized and cannot echo provider secrets or verification details
 - repository code does **not** select or activate a real payment gateway, merchant account, callback URL, TLS/WAF rule, webhook secret, settlement feed, refund API or production credential
 
+### Blueprint R3 functional increment — Case Lifecycle & Records Governance
+- migration `0015_case_lifecycle_records.sql` adds controlled disposition, closure and reopening evidence plus records-governance state; it is repository-delivered only and has **not** been applied to a live database
+- isolated Supabase test-profile translation `db/supabase/20260907_dciecms_test_0015.sql` and logical table mappings operate only through `dciecms_test`
+- `MAG` may record disposition only for the case assigned to that magistrate; `CMAG` may supervise disposition, while `REG-MGR`/`CMAG` receive controlled close/reopen authority
+- a case cannot be disposed while a hearing is `SCHEDULED` or `IN_PROGRESS`; any supplied judgment must be an `ISSUED` judgment for the same case
+- controlled lifecycle is `ASSIGNED -> DISPOSED -> CLOSED`, with reopening returning the matter to `AWAITING_ASSIGNMENT` and clearing the current assignment while preserving historical evidence
+- dedicated `RECORDS` role receives records-view, retention, archive, legal-hold and disposal-request authority without judicial, judgment, hearing, close/reopen or disposal-approval power
+- records controls support retention class, retention trigger, disposition-eligibility date, archive state and case-level legal holds
+- document-level legal holds and case-level legal holds both veto disposal; request and approval SQL atomically re-check document legal holds inside the persistence mutation
+- disposal uses maker/checker segregation: the requester cannot approve or reject the same request
+- disposal approval records a governance decision only; there is **no physical case/document deletion or disposal-execution service, repository method, HTTP endpoint or worker**
+- case/records operations are court-scoped server-side; direct cross-court access is denied before records data is read or mutated
+- lifecycle mutations, application audit evidence and emitted outbox events use the shared outer PostgreSQL transaction; audit or outbox failure rolls back the lifecycle mutation
+- generic outbox payloads contain normalized identifiers/state only and exclude free-text disposition, closure, reopen, legal-hold and disposal narratives
+- HTTP routes expose disposition, close, reopen, records-control read/update, archive, legal-hold/release and disposal request/approve/reject functions; destructive execution routes remain absent
+
 ### Verification and delivery controls
 - GitHub Actions CI covers backend tests, Court Workspace tests and production frontend build
 - live Supabase smoke-test workflow and isolated test-profile migration assets exist for controlled verification
-- Supabase incremental test-profile migrations are provided for R3 (`db/supabase/20260906_dciecms_test_0011.sql`), R5 (`db/supabase/20260906_dciecms_test_0012.sql`), secure documents (`db/supabase/20260907_dciecms_test_0013.sql`) and payment integration (`db/supabase/20260907_dciecms_test_0014.sql`); their presence does not mean they have been executed against any live environment
+- Supabase incremental test-profile migrations are provided for reliability R3 (`db/supabase/20260906_dciecms_test_0011.sql`), R5 (`db/supabase/20260906_dciecms_test_0012.sql`), secure documents (`db/supabase/20260907_dciecms_test_0013.sql`), payment integration (`db/supabase/20260907_dciecms_test_0014.sql`) and Case Lifecycle & Records Governance (`db/supabase/20260907_dciecms_test_0015.sql`); their presence does not mean they have been executed against any live environment
 - production-authentication regressions cover invalid signature, issuer, audience, time validity, subject/claim shape, signing algorithm, unknown keys, JWKS failure isolation, startup fail-closed behavior, token non-propagation, sanitized 401/503/500 behavior and 401/403 separation
 - secure-document regressions cover caller-controlled object-key rejection, authoritative integrity validation, CLEAN-only release, cross-court and cross-filer isolation, RESTRICTED/SEALED grant enforcement, signed-grant non-persistence, scan failure isolation, immutable versioning, no hard-delete path, legal-hold veto and provider/scanner diagnostic sanitization
 - payment-integration regressions cover raw-body callback verification, callback/session body bounds, callback authentication isolation, duplicate events, exact canonical matching, cross-provider rejection, fail-closed outages, secret non-persistence, sanitized HTTP failures, manual-provider-confirm blocking and transactional rollback
-- production deployment is not implied by the presence of deployment, migration, authentication, document-storage, scanner, payment-provider, outbox or smoke-test tooling
+- lifecycle/records regressions cover permission separation, assigned-MAG restrictions, hearing/judgment prerequisites, close/reopen transitions, retention validation, atomic legal-hold vetoes, maker/checker disposal, cross-court denial, no-delete/no-execute controls, minimized outbox payloads and audit/outbox transactional rollback
+- production deployment is not implied by the presence of deployment, migration, authentication, document-storage, scanner, payment-provider, records-governance, outbox or smoke-test tooling
 
 ## Court Workspace local development
 
@@ -182,6 +199,8 @@ The secure document development adapters are also development/test scaffolding. 
 
 The payment development adapter is likewise development/test scaffolding. Production payment integration defaults to disabled and cannot silently use the development adapter. Real gateway onboarding requires an approved provider contract, merchant configuration, callback URL, TLS/WAF exposure, webhook-signature secret provisioning and production secret-management/deployment authorization. Provider callback bytes, signatures, credentials, checkout tokens and provider internals must not be persisted to audit/outbox records or exposed in browser-facing errors.
 
-The browser is not an authorization boundary. Court scope, record relationship, document confidentiality, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, payment confirmation integrity, case-number generation and case-opening eligibility remain enforced by API/database layers.
+The records-governance implementation is non-destructive. Legal holds are fail-closed, disposal approval is maker/checker controlled, and no physical disposal executor exists. A future permanent disposal mechanism requires separately approved PNG Magisterial Services retention policy, legal authority, security controls, operational runbooks and an explicit production gate.
 
-Real government IdP registration/browser login, production object-storage/KMS selection and provisioning, production malware-scanner integration, production payment-gateway onboarding, external settlement/refund integration, email/SMS providers, government-agency integrations, permanent outbox/scan-worker scheduling, production hosting credentials, WAF/secrets-vault configuration, production observability, live migration execution, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments and credentials are approved.
+The browser is not an authorization boundary. Court scope, record relationship, document confidentiality, workflow transitions, durable request replay, judicial assignment, hearing and judgment authority, finance authority, receipt/reconciliation controls, payment confirmation integrity, case-number generation, case-opening eligibility, case disposition/closure/reopen authority and records-governance authority remain enforced by API/database layers.
+
+Real government IdP registration/browser login, production object-storage/KMS selection and provisioning, production malware-scanner integration, production payment-gateway onboarding, external settlement/refund integration, email/SMS providers, government-agency integrations, permanent outbox/scan-worker scheduling, physical records-disposal execution, production hosting credentials, WAF/secrets-vault configuration, production observability, live migration execution, backup/restore and disaster-recovery activation remain intentionally outside the current repository baseline until those external environments, policies and credentials are approved.
