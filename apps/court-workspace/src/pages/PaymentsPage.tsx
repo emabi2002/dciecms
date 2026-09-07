@@ -304,7 +304,7 @@ export function PaymentsPage() {
             {reconciliationExceptions.map((item) => (
               <li key={item.reconciliationId}>
                 <strong>{item.exceptionCode || item.status}</strong>
-                {item.exceptionNote ? <> — {item.exceptionNote}</> : null}
+                {item.exceptionNote ? <> — <span>{item.exceptionNote}</span></> : null}
                 <div>Reconciliation {item.reconciliationId}; payment {item.paymentId}; status {item.status}</div>
               </li>
             ))}
