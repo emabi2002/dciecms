@@ -24,6 +24,8 @@ function baseRepo(){
     async getFeeSchedule(id){ return id==='fs-1'?{feeScheduleId:id,courtId:'COURT-A',status:'DRAFT'}:null; },
     async activateFeeSchedule(){ return {feeScheduleId:'fs-1',courtId:'COURT-A',status:'ACTIVE'}; },
     async retireFeeSchedule(){ return {feeScheduleId:'fs-1',courtId:'COURT-A',status:'RETIRED'}; },
+    async listFinancePayments(){ return [{paymentId:'pay-pending',assessmentId:'assess-1',courtId:'COURT-A',amountMinor:1000,currency:'PGK',status:'PENDING',refundedAmountMinor:0}]; },
+    async listRefundRequests(){ return [refund]; },
     async createPaymentAdjustment(){ return adjustment; }, async getPaymentAdjustment(){ return adjustment; },
     async approvePaymentAdjustment(){ return {...adjustment,status:'APPROVED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
     async rejectPaymentAdjustment(){ return {...adjustment,status:'REJECTED',decidedBy:'mgr-a',decidedAt:'2026-09-07T01:00:00.000Z'}; },
@@ -49,6 +51,31 @@ test('finance manager creates a validated court-scoped fee schedule; FIN can lis
   assert.equal(created.amountMinor,1200); assert.equal(created.currency,'PGK'); assert.equal(audit.events.at(-1).action,'finance.fee_schedule.create');
   const rows=await service.listFeeSchedules(actor('fin-a','FIN')); assert.equal(rows.length,1);
   await assert.rejects(()=>service.createFeeSchedule(actor('mgr-a','FIN-MGR'),{courtId:'COURT-B',caseTypeCode:'CIVIL',feeCode:'FILING',description:'x',amountMinor:1,effectiveFrom:'2026-09-01'}), AccessDeniedError);
+});
+
+test('finance workbench lists court-scoped payment status and refund queues with audited access', async () => {
+  const repo=baseRepo(); const calls=[];
+  repo.listFinancePayments=async input=>{ calls.push(['payments',input]); return [{paymentId:'pay-pending',courtId:'COURT-A',status:'PENDING'}]; };
+  repo.listRefundRequests=async input=>{ calls.push(['refunds',input]); return [{refundRequestId:'refund-1',courtId:'COURT-A',status:'REQUESTED'}]; };
+  const {service,audit}=makeService(repo);
+  const fin=actor('fin-a','FIN',['COURT-A','COURT-B']);
+  const payments=await service.listFinancePayments(fin,{status:'PENDING'});
+  const refunds=await service.listRefunds(fin,{status:'REQUESTED'});
+  assert.equal(payments[0].status,'PENDING'); assert.equal(refunds[0].status,'REQUESTED');
+  assert.deepEqual(calls,[
+    ['payments',{courtIds:['COURT-A','COURT-B'],status:'PENDING'}],
+    ['refunds',{courtIds:['COURT-A','COURT-B'],status:'REQUESTED'}]
+  ]);
+  assert.deepEqual(audit.events.slice(-2).map(e=>e.action),['finance.payment.queue.view','finance.refund.queue.view']);
+});
+
+test('finance workbench rejects unknown payment or refund queue states before repository access', async () => {
+  const repo=baseRepo(); let calls=0;
+  repo.listFinancePayments=async()=>{calls++;return [];}; repo.listRefundRequests=async()=>{calls++;return [];};
+  const {service}=makeService(repo); const fin=actor('fin-a','FIN');
+  await assert.rejects(()=>service.listFinancePayments(fin,{status:'SOMETHING_ELSE'}), ValidationError);
+  await assert.rejects(()=>service.listRefunds(fin,{status:'SOMETHING_ELSE'}), ValidationError);
+  assert.equal(calls,0);
 });
 
 test('adjustment request is validated; requester cannot approve own adjustment; approved event excludes reason', async () => {
@@ -85,10 +112,11 @@ test('refund validates positive integer minor units and confirmed source payment
   await assert.rejects(()=>pending.requestRefund(actor('fin-a','FIN'),'pay-1',{amountMinor:100,reason:'x'}), ConflictError);
 });
 
-test('reconciliation rejection enforces maker-checker and exceptions read is court scoped', async () => {
-  const {service,outbox}=makeService();
+test('reconciliation rejection enforces maker-checker and exceptions read is court scoped and audited', async () => {
+  const {service,outbox,audit}=makeService();
   await assert.rejects(()=>service.rejectReconciliation(actor('fin-a','FIN-MGR'),'rec-1',{reason:'difference',exceptionCode:'BANK_MISMATCH'}), AccessDeniedError);
   const rejected=await service.rejectReconciliation(actor('mgr-a','FIN-MGR'),'rec-1',{reason:'difference',exceptionCode:'BANK_MISMATCH'}); assert.equal(rejected.status,'REJECTED');
   const rows=await service.listReconciliationExceptions(actor('fin-a','FIN')); assert.equal(rows.length,1);
+  assert.equal(audit.events.at(-1).action,'finance.reconciliation.exception.view');
   assert.equal(outbox.events.at(-1).eventType,'finance.reconciliation.rejected'); assert.equal('reason' in outbox.events.at(-1).payload,false);
 });
