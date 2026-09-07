@@ -16,38 +16,113 @@ const {
 } = require('./document-runtime');
 const { PostgresDocumentScanStore } = require('./postgres-document-scan-store');
 const { DocumentScanWorker } = require('./document-scan-worker');
+const { createPaymentRuntime } = require('./payment-runtime');
+const { PaymentIntegrationService } = require('./payment-integration-service');
+const { PaymentWebhookService } = require('./payment-webhook-service');
+const { PaymentEventProcessor } = require('./payment-event-processor');
+const {
+  MemoryPaymentIntegrationRepository,
+  MemoryPaymentOutboxStore,
+  MemoryTransactionManager
+} = require('./memory-payment-integration-repository');
+
+function attachPaymentRuntime(service, paymentRuntime, {
+  repository = null,
+  auditStore = null,
+  outboxStore = null,
+  transactionManager = null
+} = {}) {
+  service.paymentIntegrationMode = paymentRuntime.mode;
+  service.paymentProvider = paymentRuntime.provider;
+  service.paymentIntegrationRepository = repository;
+  service.paymentWebhookService = null;
+  service.paymentEventProcessor = null;
+
+  if (!paymentRuntime.enabled) {
+    service.paymentIntegration = null;
+    return service;
+  }
+
+  const paymentIntegration = new PaymentIntegrationService({
+    repository,
+    provider: paymentRuntime.provider,
+    providerCode: paymentRuntime.providerCode,
+    auditStore
+  });
+  const paymentWebhookService = new PaymentWebhookService({
+    repository,
+    provider: paymentRuntime.provider,
+    providerCode: paymentRuntime.providerCode
+  });
+  const paymentEventProcessor = new PaymentEventProcessor({
+    repository,
+    auditStore,
+    outboxStore,
+    transactionManager
+  });
+
+  service.paymentIntegration = paymentIntegration;
+  service.paymentWebhookService = paymentWebhookService;
+  service.paymentEventProcessor = paymentEventProcessor;
+  return service;
+}
 
 function createRuntimeService({
   env = process.env,
   PoolClass,
   documentStorage = null,
-  malwareScanner = null
+  malwareScanner = null,
+  paymentProvider = null
 } = {}) {
   const documentRuntime = createDocumentRuntime({
     env,
     storage: documentStorage,
     scanner: malwareScanner
   });
+  const paymentRuntime = createPaymentRuntime({
+    env,
+    provider: paymentProvider
+  });
   const connectionString = env.DATABASE_URL && String(env.DATABASE_URL).trim();
+  const production = String(env.NODE_ENV || '').trim().toLowerCase() === 'production';
 
   if (!connectionString) {
-    const service = new DciecmsService();
-    if (!documentRuntime.enabled) return service;
+    if (production && paymentRuntime.enabled) {
+      throw new TypeError('Production payment integration requires persistent database configuration');
+    }
 
-    const scanStore = new MemoryDocumentScanStore();
-    const repository = new MemorySecureDocumentRepository({
-      filings: service.filings,
-      documents: service.documents,
-      scanStore
-    });
-    const secureDocumentService = new SecureDocumentService({
-      repository,
-      storage: documentRuntime.storage,
-      auditStore: service.audit,
-      scanStore
-    });
-    service.secureDocuments = secureDocumentService;
-    service.documentScanStore = scanStore;
+    const service = new DciecmsService();
+    if (documentRuntime.enabled) {
+      const scanStore = new MemoryDocumentScanStore();
+      const repository = new MemorySecureDocumentRepository({
+        filings: service.filings,
+        documents: service.documents,
+        scanStore
+      });
+      const secureDocumentService = new SecureDocumentService({
+        repository,
+        storage: documentRuntime.storage,
+        auditStore: service.audit,
+        scanStore
+      });
+      service.secureDocuments = secureDocumentService;
+      service.documentScanStore = scanStore;
+    }
+
+    if (paymentRuntime.enabled) {
+      const paymentRepository = new MemoryPaymentIntegrationRepository();
+      const paymentOutboxStore = new MemoryPaymentOutboxStore();
+      const paymentTransactionManager = new MemoryTransactionManager();
+      service.outbox = paymentOutboxStore;
+      attachPaymentRuntime(service, paymentRuntime, {
+        repository: paymentRepository,
+        auditStore: service.audit,
+        outboxStore: paymentOutboxStore,
+        transactionManager: paymentTransactionManager
+      });
+    } else {
+      attachPaymentRuntime(service, paymentRuntime);
+    }
     return service;
   }
 
@@ -88,6 +163,17 @@ function createRuntimeService({
   });
   if (documentScanStore) service.documentScanStore = documentScanStore;
   if (documentScanWorker) service.documentScanWorker = documentScanWorker;
+
+  if (paymentRuntime.enabled) {
+    attachPaymentRuntime(service, paymentRuntime, {
+      repository,
+      auditStore,
+      outboxStore,
+      transactionManager: database
+    });
+  } else {
+    attachPaymentRuntime(service, paymentRuntime);
+  }
 
   return createTransactionalService(service, database);
 }
