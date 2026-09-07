@@ -33,14 +33,21 @@ const EVENT = Object.freeze({
   receivedAt: '2026-09-07T01:00:01.000Z'
 });
 
-function fixture({ payment = PAYMENT } = {}) {
+function fixture({ payment = PAYMENT, event = EVENT } = {}) {
   const calls = [];
   const repo = {
     payment: payment ? { ...payment } : null,
+    canonicalEvent: event ? { ...event } : null,
     confirmCalls: [],
     outcomeCalls: [],
     processedCalls: [],
     rejectedCalls: [],
+    async getPaymentProviderEvent(eventRecordId) {
+      calls.push(`event:${eventRecordId}`);
+      return this.canonicalEvent?.eventRecordId === eventRecordId
+        ? Object.freeze({ ...this.canonicalEvent })
+        : null;
+    },
     async getPaymentProviderBinding(paymentId) {
       calls.push(`get:${paymentId}`);
       return this.payment ? Object.freeze({ ...this.payment }) : null;
@@ -68,18 +75,32 @@ function fixture({ payment = PAYMENT } = {}) {
     },
     async markPaymentProviderEventProcessed(input) {
       this.processedCalls.push({ ...input });
-      return Object.freeze({ ...EVENT, eventRecordId: input.eventRecordId, processingStatus: 'PROCESSED', resultCode: input.resultCode, processedAt: input.processedAt });
+      this.canonicalEvent = {
+        ...this.canonicalEvent,
+        eventRecordId: input.eventRecordId,
+        processingStatus: 'PROCESSED',
+        resultCode: input.resultCode,
+        processedAt: input.processedAt
+      };
+      return Object.freeze({ ...this.canonicalEvent });
     },
     async markPaymentProviderEventRejected(input) {
       this.rejectedCalls.push({ ...input });
-      return Object.freeze({ ...EVENT, eventRecordId: input.eventRecordId, processingStatus: 'REJECTED', resultCode: input.resultCode, processedAt: input.processedAt });
+      this.canonicalEvent = {
+        ...this.canonicalEvent,
+        eventRecordId: input.eventRecordId,
+        processingStatus: 'REJECTED',
+        resultCode: input.resultCode,
+        processedAt: input.processedAt
+      };
+      return Object.freeze({ ...this.canonicalEvent });
     }
   };
   const auditEvents = [];
   const outboxEvents = [];
   const transactionTrace = [];
-  const auditStore = { async append(event) { auditEvents.push({ ...event }); return event; } };
-  const outboxStore = { async enqueue(event) { outboxEvents.push({ ...event }); return event; } };
+  const auditStore = { async append(auditEvent) { auditEvents.push({ ...auditEvent }); return auditEvent; } };
+  const outboxStore = { async enqueue(outboxEvent) { outboxEvents.push({ ...outboxEvent }); return outboxEvent; } };
   const transactionManager = {
     async withTransaction(work) {
       transactionTrace.push('BEGIN');
@@ -132,7 +153,7 @@ test('duplicate already-processed success is a no-op for payment audit and outbo
   const { processor, repo, auditEvents, outboxEvents } = fixture();
   const first = await processor.process(EVENT);
   const counts = { confirm: repo.confirmCalls.length, audit: auditEvents.length, outbox: outboxEvents.length };
-  const second = await processor.process({ ...EVENT, processingStatus: 'PROCESSED', resultCode: 'PAYMENT_CONFIRMED' });
+  const second = await processor.process({ ...EVENT, processingStatus: 'RECEIVED' });
 
   assert.equal(first.payment.status, 'CONFIRMED');
   assert.equal(second.duplicate, true);
@@ -151,8 +172,9 @@ test('provider reference correlation amount or currency mismatch rejects event a
   ];
 
   for (const variant of variants) {
-    const { processor, repo, auditEvents, outboxEvents } = fixture();
-    const result = await processor.process({ ...EVENT, ...variant });
+    const canonicalEvent = { ...EVENT, ...variant };
+    const { processor, repo, auditEvents, outboxEvents } = fixture({ event: canonicalEvent });
+    const result = await processor.process(canonicalEvent);
     assert.equal(result.event.processingStatus, 'REJECTED');
     assert.equal(repo.payment.status, 'PENDING');
     assert.equal(repo.confirmCalls.length, 0);
@@ -174,8 +196,8 @@ test('success requires an eligible pending canonical payment', async () => {
 
 test('failure and cancellation record canonical provider outcome but never confirm or emit payment.confirmed', async () => {
   for (const normalizedEventType of ['PAYMENT_FAILED', 'PAYMENT_CANCELLED']) {
-    const { processor, repo, auditEvents, outboxEvents } = fixture();
     const event = { ...EVENT, normalizedEventType, amountMinor: null, currency: null };
+    const { processor, repo, auditEvents, outboxEvents } = fixture({ event });
     const result = await processor.process(event);
 
     assert.equal(result.event.processingStatus, 'PROCESSED');
@@ -200,8 +222,9 @@ test('refund and reversal preserve original confirmation and historical downstre
   };
 
   for (const normalizedEventType of ['PAYMENT_REFUNDED', 'PAYMENT_REVERSED']) {
-    const { processor, repo, auditEvents, outboxEvents } = fixture({ payment: confirmed });
-    const result = await processor.process({ ...EVENT, normalizedEventType, providerEventId: `evt-${normalizedEventType}` });
+    const event = { ...EVENT, normalizedEventType, providerEventId: `evt-${normalizedEventType}` };
+    const { processor, repo, auditEvents, outboxEvents } = fixture({ payment: confirmed, event });
+    const result = await processor.process(event);
     assert.equal(result.event.processingStatus, 'PROCESSED');
     assert.equal(result.payment.status, 'REFUNDED');
     assert.equal(result.payment.confirmedAt, confirmed.confirmedAt);
@@ -216,8 +239,9 @@ test('refund and reversal preserve original confirmation and historical downstre
 });
 
 test('unknown normalized event fails closed without payment mutation', async () => {
-  const { processor, repo, auditEvents, outboxEvents } = fixture();
-  const result = await processor.process({ ...EVENT, normalizedEventType: 'PAYMENT_UNKNOWN' });
+  const event = { ...EVENT, normalizedEventType: 'PAYMENT_UNKNOWN' };
+  const { processor, repo, auditEvents, outboxEvents } = fixture({ event });
+  const result = await processor.process(event);
   assert.equal(result.event.processingStatus, 'REJECTED');
   assert.equal(repo.payment.status, 'PENDING');
   assert.equal(repo.confirmCalls.length, 0);
