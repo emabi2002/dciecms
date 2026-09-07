@@ -59,6 +59,11 @@ export type Payment = {
   confirmedAt?: string | null;
 };
 
+export type PaymentSession = {
+  checkoutUrl: string;
+  expiresAt: string | null;
+};
+
 export type Receipt = {
   receiptId: string;
   paymentId: string;
